@@ -1,0 +1,26 @@
+{
+    "name": "clarion-app/life-log-backend",
+    "type": "library",
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "ClarionApp\\LifeLogBackend\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Tim Schwartz",
+            "email": "tim@metaverse.systems"
+        }
+    ],
+    "minimum-stability": "dev",
+    "require": {},
+    "extra": {
+        "laravel": {
+            "providers": [
+                "ClarionApp\\LifeLogBackend\\LifeLogBackendServiceProvider"
+            ]
+        }
+    }
+
+}
