@@ -1,0 +1,166 @@
+{
+    "_readme": [
+        "This file locks the dependencies of your project to a known state",
+        "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
+        "This file is @generated automatically"
+    ],
+    "content-hash": "cb19ebb42684c5aca0d26c86e44ee453",
+    "packages": [
+        {
+            "name": "clarion-app/contacts-backend",
+            "version": "dev-main",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/clarion-app/contacts-backend.git",
+                "reference": "e99be49cd1523a59b6927746857699a4c74f96f5"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/clarion-app/contacts-backend/zipball/e99be49cd1523a59b6927746857699a4c74f96f5",
+                "reference": "e99be49cd1523a59b6927746857699a4c74f96f5",
+                "shasum": ""
+            },
+            "require": {
+                "clarion-app/eloquent-multichain-bridge": "dev-main"
+            },
+            "default-branch": true,
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "ClarionApp\\ContactsBackend\\ContactsBackendServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "ClarionApp\\ContactsBackend\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Tim Schwartz",
+                    "email": "tim@metaverse.systems"
+                }
+            ],
+            "support": {
+                "issues": "https://github.com/clarion-app/contacts-backend/issues",
+                "source": "https://github.com/clarion-app/contacts-backend/tree/main"
+            },
+            "time": "2024-08-25T01:12:44+00:00"
+        },
+        {
+            "name": "clarion-app/eloquent-multichain-bridge",
+            "version": "dev-main",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/clarion-app/eloquent-multichain-bridge.git",
+                "reference": "1ba1c017df4d1366472dc3217f3081bf4eaae760"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/clarion-app/eloquent-multichain-bridge/zipball/1ba1c017df4d1366472dc3217f3081bf4eaae760",
+                "reference": "1ba1c017df4d1366472dc3217f3081bf4eaae760",
+                "shasum": ""
+            },
+            "require": {
+                "clarion-app/multichain": "dev-main"
+            },
+            "default-branch": true,
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "ClarionApp\\EloquentMultiChainBridge\\EloquentMultiChainProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "App\\": "app/",
+                    "ClarionApp\\EloquentMultiChainBridge\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Tim Schwartz",
+                    "email": "tim@metaverse.systems"
+                }
+            ],
+            "description": "Replicates models onto blockchain",
+            "support": {
+                "issues": "https://github.com/clarion-app/eloquent-multichain-bridge/issues",
+                "source": "https://github.com/clarion-app/eloquent-multichain-bridge/tree/main"
+            },
+            "time": "2024-08-06T07:42:38+00:00"
+        },
+        {
+            "name": "clarion-app/multichain",
+            "version": "dev-main",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/clarion-app/multichain.git",
+                "reference": "acaee21b9b354cd5bca564a759580b8f4d0cfc80"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/clarion-app/multichain/zipball/acaee21b9b354cd5bca564a759580b8f4d0cfc80",
+                "reference": "acaee21b9b354cd5bca564a759580b8f4d0cfc80",
+                "shasum": ""
+            },
+            "default-branch": true,
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "ClarionApp\\MultiChain\\MultiChainProvider"
+                    ],
+                    "aliases": {
+                        "MultiChain": "ClarionApp\\MultiChain\\Facades\\MultiChain"
+                    }
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "App\\": "app/",
+                    "ClarionApp\\MultiChain\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Tim Schwartz",
+                    "email": "tim@metaverse.systems"
+                }
+            ],
+            "description": "PHP package for communicating with MultiChain RPC server",
+            "support": {
+                "issues": "https://github.com/clarion-app/multichain/issues",
+                "source": "https://github.com/clarion-app/multichain/tree/main"
+            },
+            "time": "2024-08-06T14:51:24+00:00"
+        }
+    ],
+    "packages-dev": [],
+    "aliases": [],
+    "minimum-stability": "dev",
+    "stability-flags": {
+        "clarion-app/contacts-backend": 20
+    },
+    "prefer-stable": false,
+    "prefer-lowest": false,
+    "platform": [],
+    "platform-dev": [],
+    "plugin-api-version": "2.6.0"
+}

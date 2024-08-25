@@ -14,7 +14,10 @@
         }
     ],
     "minimum-stability": "dev",
-    "require": {},
+    "require": {
+        "clarion-app/contacts-backend": "dev-main",
+        "clarion-app/eloquent-multichain-bridge": "dev-main"
+    },
     "extra": {
         "laravel": {
             "providers": [
