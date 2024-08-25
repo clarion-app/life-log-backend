@@ -1,10 +1,11 @@
 <?php
 
-namespace ClarionApp\LifeLogBackend\Http\Controllers;
+namespace ClarionApp\LifeLogBackend\Controllers;
 
 use Illuminate\Http\Request;
 use ClarionApp\LifeLogBackend\Models\Entry;
 use Illuminate\Support\Facades\Auth;
+use App\Http\Controllers\Controller;
 
 class EntryController extends Controller
 {
@@ -31,9 +32,6 @@ class EntryController extends Controller
             'title' => 'required|string|max:255',
             'content' => 'required|string',
             'entry_date' => 'required|date',
-            'location_id' => 'nullable|uuid|exists:life_log_locations,id',
-            'contacts' => 'nullable|array',
-            'contacts.*' => 'uuid|exists:contacts,id'
         ]);
 
         $entry = new Entry();
@@ -41,12 +39,8 @@ class EntryController extends Controller
         $entry->title = $validatedData['title'];
         $entry->content = $validatedData['content'];
         $entry->entry_date = $validatedData['entry_date'];
-        $entry->location_id = $validatedData['location_id'] ?? null;
+        //$entry->location_id = $validatedData['location_id'] ?? null;
         $entry->save();
-
-        if (!empty($validatedData['contacts'])) {
-            $entry->contacts()->sync($validatedData['contacts']);
-        }
 
         return response()->json($entry, 201);
     }

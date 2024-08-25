@@ -16,9 +16,10 @@ return new class extends Migration
             $table->timestamp('entry_date');
             $table->uuid('location_id')->nullable();
             $table->timestamps();
+            $table->softDeletes();
 
             $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
-            $table->foreign('location_id')->references('id')->on('locations')->onDelete('set null');
+            $table->foreign('location_id')->references('id')->on('life_log_locations')->onDelete('set null');
         });
     }
 

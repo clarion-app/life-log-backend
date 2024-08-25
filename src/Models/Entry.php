@@ -12,6 +12,7 @@ class Entry extends Model
     use EloquentMultiChainBridge, SoftDeletes;
 
     protected $table = 'life_log_entries';
+    protected $fillable = ['user_id', 'title', 'content', 'entry_date', 'location_id'];
 
     public function contacts()
     {

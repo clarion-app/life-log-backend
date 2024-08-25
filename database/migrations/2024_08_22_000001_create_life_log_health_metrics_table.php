@@ -15,6 +15,7 @@ return new class extends Migration
             $table->decimal('value', 8, 2);
             $table->timestamp('recorded_at');
             $table->timestamps();
+            $table->softDeletes();
 
             $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
         });

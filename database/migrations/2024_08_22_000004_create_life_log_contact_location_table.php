@@ -13,7 +13,7 @@ return new class extends Migration
             $table->uuid('location_id');
 
             $table->foreign('contact_id')->references('id')->on('contacts')->onDelete('cascade');
-            $table->foreign('location_id')->references('id')->on('locations')->onDelete('cascade');
+            $table->foreign('location_id')->references('id')->on('life_log_locations')->onDelete('cascade');
 
             $table->primary(['contact_id', 'location_id']);
         });
