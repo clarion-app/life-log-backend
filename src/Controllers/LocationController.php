@@ -1,10 +1,11 @@
 <?php
 
-namespace ClarionApp\LifeLogBackend\Http\Controllers;
+namespace ClarionApp\LifeLogBackend\Controllers;
 
 use Illuminate\Http\Request;
 use ClarionApp\LifeLogBackend\Models\Location;
 use Illuminate\Support\Facades\Auth;
+use App\Http\Controllers\Controller;
 
 class LocationController extends Controller
 {

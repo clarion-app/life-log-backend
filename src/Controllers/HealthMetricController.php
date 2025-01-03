@@ -1,10 +1,11 @@
 <?php
 
-namespace ClarionApp\LifeLogBackend\Http\Controllers;
+namespace ClarionApp\LifeLogBackend\Controllers;
 
 use Illuminate\Http\Request;
 use ClarionApp\LifeLogBackend\Models\HealthMetric;
 use Illuminate\Support\Facades\Auth;
+use App\Http\Controllers\Controller;
 
 class HealthMetricController extends Controller
 {
