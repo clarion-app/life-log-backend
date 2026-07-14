@@ -16,7 +16,7 @@ class EntryController extends Controller
      */
     public function index()
     {
-        $entries = Entry::where('user_id', Auth::id())->get();
+        $entries = Entry::where('user_id', Auth::id())->with('contacts')->get();
         return response()->json($entries);
     }
 
@@ -32,6 +32,9 @@ class EntryController extends Controller
             'title' => 'required|string|max:255',
             'content' => 'required|string',
             'entry_date' => 'required|date',
+            'location_id' => 'nullable|uuid|exists:life_log_locations,id',
+            'contacts' => 'nullable|array',
+            'contacts.*' => 'uuid|exists:contacts,id'
         ]);
 
         $entry = new Entry();
@@ -39,10 +42,14 @@ class EntryController extends Controller
         $entry->title = $validatedData['title'];
         $entry->content = $validatedData['content'];
         $entry->entry_date = $validatedData['entry_date'];
-        //$entry->location_id = $validatedData['location_id'] ?? null;
+        $entry->location_id = $validatedData['location_id'] ?? null;
         $entry->save();
 
-        return response()->json($entry, 201);
+        if (array_key_exists('contacts', $validatedData)) {
+            $entry->contacts()->sync($validatedData['contacts']);
+        }
+
+        return response()->json($entry->load('contacts'), 201);
     }
 
     /**
@@ -53,7 +60,7 @@ class EntryController extends Controller
      */
     public function show($id)
     {
-        $entry = Entry::where('user_id', Auth::id())->findOrFail($id);
+        $entry = Entry::where('user_id', Auth::id())->with('contacts')->findOrFail($id);
         return response()->json($entry);
     }
 
@@ -83,11 +90,11 @@ class EntryController extends Controller
         $entry->location_id = $validatedData['location_id'] ?? null;
         $entry->save();
 
-        if (!empty($validatedData['contacts'])) {
+        if (array_key_exists('contacts', $validatedData)) {
             $entry->contacts()->sync($validatedData['contacts']);
         }
 
-        return response()->json($entry);
+        return response()->json($entry->load('contacts'));
     }
 
     /**

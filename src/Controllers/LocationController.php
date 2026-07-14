@@ -16,7 +16,7 @@ class LocationController extends Controller
      */
     public function index()
     {
-        $locations = Location::where('user_id', Auth::id())->get();
+        $locations = Location::where('user_id', Auth::id())->with('contacts')->get();
         return response()->json($locations);
     }
 
@@ -45,11 +45,11 @@ class LocationController extends Controller
         $location->visited_at = $validatedData['visited_at'] ?? null;
         $location->save();
 
-        if (!empty($validatedData['contacts'])) {
+        if (array_key_exists('contacts', $validatedData)) {
             $location->contacts()->sync($validatedData['contacts']);
         }
 
-        return response()->json($location, 201);
+        return response()->json($location->load('contacts'), 201);
     }
 
     /**
@@ -60,7 +60,7 @@ class LocationController extends Controller
      */
     public function show($id)
     {
-        $location = Location::where('user_id', Auth::id())->findOrFail($id);
+        $location = Location::where('user_id', Auth::id())->with('contacts')->findOrFail($id);
         return response()->json($location);
     }
 
@@ -90,11 +90,11 @@ class LocationController extends Controller
         $location->visited_at = $validatedData['visited_at'] ?? null;
         $location->save();
 
-        if (!empty($validatedData['contacts'])) {
+        if (array_key_exists('contacts', $validatedData)) {
             $location->contacts()->sync($validatedData['contacts']);
         }
 
-        return response()->json($location);
+        return response()->json($location->load('contacts'));
     }
 
     /**
