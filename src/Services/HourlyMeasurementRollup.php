@@ -24,11 +24,17 @@ class HourlyMeasurementRollup
         $totalWritten = 0;
         $totalDeferred = 0;
 
+        // Cursor over queue ids. Successful buckets are deleted, but deferred ones
+        // stay queued on purpose — advancing past them by id is what keeps
+        // the drain loop terminating while still retrying them on the next run.
+        $afterId = 0;
+
         do {
-            $result = $this->drainAndProcess($batchSize);
+            $result = $this->drainAndProcess($batchSize, $afterId);
             $totalWritten += $result['written'];
             $totalDeferred += $result['deferred'];
-        } while ($result['written'] > 0 || $result['deferred'] > 0);
+            $afterId = $result['last_id'];
+        } while ($result['claimed'] === $batchSize);
 
         return ['written' => $totalWritten, 'deferred' => $totalDeferred];
     }
@@ -36,21 +42,28 @@ class HourlyMeasurementRollup
     /**
      * Drain a batch of queue rows and process them.
      *
-     * @return array {written: int, deferred: int}
+     * Deferred rows are deliberately included: both deferral conditions
+     * (`unclassified_type`, `overflow`) are externally resolvable, and the queue
+     * entry is the retry (data-model.md, "Rollup write path" steps 3 and 5).
+     *
+     * @return array {written: int, deferred: int, claimed: int, last_id: int}
      */
-    protected function drainAndProcess(int $batchSize): array
+    protected function drainAndProcess(int $batchSize, int $afterId = 0): array
     {
-        return DB::transaction(function () use ($batchSize) {
+        return DB::transaction(function () use ($batchSize, $afterId) {
             // Lock queue rows for update to prevent concurrent runners from claiming the same rows
-            $queueRows = MeasurementRollupQueue::whereNull('deferred_reason')
-                ->orderBy('bucket_hour')
+            $queueRows = MeasurementRollupQueue::where('id', '>', $afterId)
+                ->orderBy('id')
                 ->limit($batchSize)
                 ->lockForUpdate()
                 ->get();
 
             if ($queueRows->isEmpty()) {
-                return ['written' => 0, 'deferred' => 0];
+                return ['written' => 0, 'deferred' => 0, 'claimed' => 0, 'last_id' => $afterId];
             }
+
+            $lastId = (int) $queueRows->last()->id;
+            $claimed = $queueRows->count();
 
             // Collect distinct (user_id, external_service, type, unit, bucket_hour) tuples
             $bucketKeys = $queueRows->mapWithKeys(function ($row) {
@@ -62,7 +75,8 @@ class HourlyMeasurementRollup
             $aggregateResults = $this->fetchAggregates($bucketKeys);
 
             // Process batch
-            return $this->processBatch($queueRows, $aggregateResults);
+            return $this->processBatch($queueRows, $aggregateResults)
+                + ['claimed' => $claimed, 'last_id' => $lastId];
         });
     }
 

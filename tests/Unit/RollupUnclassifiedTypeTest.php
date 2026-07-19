@@ -131,16 +131,14 @@ class RollupUnclassifiedTypeTest extends TestCase
         $queueRow = MeasurementRollupQueue::first();
         $this->assertEquals('unclassified_type', $queueRow->deferred_reason);
 
-        // Now classify the type
+        // Now classify the type. nothing else is required of the operator —
+        // the deferred queue entry is itself the retry, so the next run picks it up.
         $this->classify('unknown_metric', MeasurementTypeClassification::AGGREGATION_CUMULATIVE);
-
-        // Clear deferred_reason so the rollup will pick it up again
-        $queueRow->deferred_reason = null;
-        $queueRow->save();
 
         // Second run: type now classified → summarized
         $result2 = $this->rollup->run();
         $this->assertEquals(1, $result2['written']);
+        $this->assertEquals(0, MeasurementRollupQueue::count(), 'queue entry drained once written');
 
         $entry = HealthMetric::first();
         $this->assertNotNull($entry);

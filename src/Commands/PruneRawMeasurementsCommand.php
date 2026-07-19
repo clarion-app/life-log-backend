@@ -5,7 +5,6 @@ namespace ClarionApp\LifeLogBackend\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Carbon\CarbonInterface;
 
 class PruneRawMeasurementsCommand extends Command
 {
@@ -16,11 +15,6 @@ class PruneRawMeasurementsCommand extends Command
      * Chunk size for bounded deletion.
      */
     protected int $chunkSize = 500;
-
-    public function __construct()
-    {
-        parent::__construct();
-    }
 
     public function handle(): int
     {
@@ -41,19 +35,9 @@ class PruneRawMeasurementsCommand extends Command
         // (pending or deferred). This ensures the rollup can still process them.
         // Raw measurements are non-bridged, so deletion does not publish chain events.
         do {
-            $deleted = DB::table('life_log_raw_measurements')
-                ->where('bucket_hour', '<', $cutoff)
-                ->whereDoesntHave('rollupQueue', function ($query) {
-                    // Subquery: exclude rows where a queue entry exists for this bucket identity
-                    // We use a raw EXISTS subquery for performance
-                })
-                // Use a subquery approach: delete rows where no matching queue row exists
-                ->take($this->chunkSize);
-
-            // Build the actual delete with EXISTS check
             $deletedCount = DB::table('life_log_raw_measurements as rm')
                 ->where('rm.bucket_hour', '<', $cutoff)
-                ->whereNotExists(function ($query) use ($cutoff) {
+                ->whereNotExists(function ($query) {
                     $query->select(DB::raw(1))
                         ->from('life_log_measurement_rollup_queue as q')
                         ->whereRaw('q.user_id = rm.user_id')

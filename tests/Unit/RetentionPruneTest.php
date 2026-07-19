@@ -8,7 +8,6 @@ use ClarionApp\LifeLogBackend\Models\MeasurementRollupQueue;
 use ClarionApp\LifeLogBackend\Commands\PruneRawMeasurementsCommand;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Config;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Carbon\CarbonImmutable;
 
 class RetentionPruneTest extends TestCase
