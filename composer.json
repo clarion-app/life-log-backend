@@ -19,6 +19,18 @@
         "clarion-app/eloquent-multichain-bridge": "dev-main",
         "clarion-app/backend": "dev-main"
     },
+    "require-dev": {
+        "orchestra/testbench": "^9",
+        "phpunit/phpunit": "^11"
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "vendor/bin/phpunit"
+    },
     "extra": {
         "laravel": {
             "providers": [
@@ -29,6 +41,10 @@
             "app-name": "@clarion-app/life-log",
             "description": "Provides operations for managing life log data"
         }
+    },
+    "config": {
+        "allow-plugins": {
+            "php-http/discovery": true
+        }
     }
-
 }

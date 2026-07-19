@@ -5,7 +5,7 @@ namespace ClarionApp\LifeLogBackend\Controllers;
 use Illuminate\Http\Request;
 use ClarionApp\LifeLogBackend\Models\HealthMetric;
 use Illuminate\Support\Facades\Auth;
-use App\Http\Controllers\Controller;
+use Illuminate\Routing\Controller;
 
 class HealthMetricController extends Controller
 {
@@ -32,6 +32,8 @@ class HealthMetricController extends Controller
             'type' => 'required|string|max:255',
             'value' => 'required|numeric',
             'recorded_at' => 'required|date',
+            'source' => 'sometimes|string|max:255',
+            'unit' => 'sometimes|nullable|string|max:32',
         ]);
 
         $metric = new HealthMetric();
@@ -39,6 +41,10 @@ class HealthMetricController extends Controller
         $metric->type = $validatedData['type'];
         $metric->value = $validatedData['value'];
         $metric->recorded_at = $validatedData['recorded_at'];
+        $metric->source = $validatedData['source'] ?? 'manual';
+        if (array_key_exists('unit', $validatedData)) {
+            $metric->unit = $validatedData['unit'];
+        }
         $metric->save();
 
         return response()->json($metric, 201);
@@ -71,11 +77,19 @@ class HealthMetricController extends Controller
             'type' => 'required|string|max:255',
             'value' => 'required|numeric',
             'recorded_at' => 'required|date',
+            'source' => 'sometimes|string|max:255',
+            'unit' => 'sometimes|nullable|string|max:32',
         ]);
 
         $metric->type = $validatedData['type'];
         $metric->value = $validatedData['value'];
         $metric->recorded_at = $validatedData['recorded_at'];
+        if (array_key_exists('source', $validatedData)) {
+            $metric->source = $validatedData['source'];
+        }
+        if (array_key_exists('unit', $validatedData)) {
+            $metric->unit = $validatedData['unit'];
+        }
         $metric->save();
 
         return response()->json($metric);

@@ -4,8 +4,9 @@ use Illuminate\Support\Facades\Route;
 use ClarionApp\LifeLogBackend\Controllers\EntryController;
 use ClarionApp\LifeLogBackend\Controllers\LocationController;
 use ClarionApp\LifeLogBackend\Controllers\HealthMetricController;
+use Illuminate\Session\Middleware\StartSession;
 
-Route::group(['prefix'=>$this->routePrefix, 'middleware' => 'auth:api'], function () {
+Route::group(['prefix'=>$this->routePrefix, 'middleware' => [StartSession::class, 'auth:api']], function () {
     Route::resource('entry', EntryController::class);
     Route::resource('location', LocationController::class);
     Route::resource('health-metric', HealthMetricController::class);
