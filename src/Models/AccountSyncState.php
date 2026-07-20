@@ -20,6 +20,7 @@ class AccountSyncState extends Model
         'last_success_at',
         'last_failure_at',
         'last_failure_kind',
+        'needs_attention_reason',
     ];
 
     protected $casts = [

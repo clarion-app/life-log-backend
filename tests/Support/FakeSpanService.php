@@ -6,6 +6,7 @@ use ClarionApp\LifeLogBackend\Contracts\ExternalHealthService;
 use ClarionApp\LifeLogBackend\Exceptions\HealthServiceFailure;
 use ClarionApp\LifeLogBackend\Exceptions\ImplausibleTimestampException;
 use ClarionApp\LifeLogBackend\Exceptions\UnconvertibleUnitException;
+use ClarionApp\LifeLogBackend\External\AuthorizationGrant;
 use ClarionApp\LifeLogBackend\External\ConnectionResult;
 use ClarionApp\LifeLogBackend\External\DisconnectResult;
 use ClarionApp\LifeLogBackend\External\PageCursor;
@@ -163,6 +164,22 @@ final class FakeSpanService implements ExternalHealthService
         // The remote could not be reached to confirm, which is still a success:
         // local access is gone and retrying forever would help nobody.
         return DisconnectResult::localOnly();
+    }
+
+    public function completeConnection(
+        string $userId,
+        string $code,
+        string $redirectUri,
+    ): AuthorizationGrant {
+        $this->failIfForced();
+
+        return new AuthorizationGrant(
+            accessToken: 'span-access-' . $userId,
+            refreshToken: 'span-refresh-' . $userId,
+            expiresAt: CarbonImmutable::now()->addHours(2),
+            scopes: 'health_data',
+            externalAccountId: 'span-acc-' . $userId,
+        );
     }
 
     public function invalidateCursors(): void

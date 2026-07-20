@@ -3,6 +3,7 @@
 namespace ClarionApp\LifeLogBackend;
 
 use ClarionApp\Backend\ClarionPackageServiceProvider;
+use ClarionApp\LifeLogBackend\Commands\PruneConnectionAttemptsCommand;
 use ClarionApp\LifeLogBackend\Commands\PruneRawMeasurementsCommand;
 use ClarionApp\LifeLogBackend\Commands\PruneRawSessionsCommand;
 use ClarionApp\LifeLogBackend\Commands\PruneSyncAttemptsCommand;
@@ -11,6 +12,12 @@ use ClarionApp\LifeLogBackend\Commands\RollupMeasurementsCommand;
 use ClarionApp\LifeLogBackend\Commands\SyncAccountCommand;
 use ClarionApp\LifeLogBackend\Commands\SyncAccountsCommand;
 use ClarionApp\LifeLogBackend\Commands\SyncVocabularyClassificationsCommand;
+use ClarionApp\LifeLogBackend\Connection\ConnectionAttemptFactory;
+use ClarionApp\LifeLogBackend\Connection\ConnectionAttemptVerifier;
+use ClarionApp\LifeLogBackend\Connection\ConnectionCompleter;
+use ClarionApp\LifeLogBackend\Connection\RedirectUriValidator;
+use ClarionApp\LifeLogBackend\Credentials\CredentialVerifier;
+use ClarionApp\LifeLogBackend\Credentials\ServiceCredentialProvider;
 use ClarionApp\LifeLogBackend\External\HealthServiceRegistry;
 use ClarionApp\LifeLogBackend\Jobs\SyncConnectedAccountJob;
 use ClarionApp\LifeLogBackend\Services\HourlyMeasurementRollup;
@@ -45,6 +52,21 @@ class LifeLogBackendServiceProvider extends ClarionPackageServiceProvider
         // register themselves against this instance from their own providers, so
         // adding a service touches no file in this package.
         $this->app->singleton(HealthServiceRegistry::class);
+
+        // Per-request memoisation: ServiceCredentialProvider caches lookups for
+        // the current request/job, so queue workers see rotated credentials between
+        // jobs. A singleton would leak the cache across requests in web context,
+        // and a fresh instance per injection would defeat memoisation entirely.
+        $this->app->scoped(ServiceCredentialProvider::class);
+
+        // Redirect URI validation and credential verification
+        $this->app->singleton(RedirectUriValidator::class);
+        $this->app->singleton(CredentialVerifier::class);
+
+        // Connection flow infrastructure
+        $this->app->singleton(ConnectionAttemptFactory::class);
+        $this->app->singleton(ConnectionAttemptVerifier::class);
+        $this->app->singleton(ConnectionCompleter::class);
     }
 
     public function boot(): void
@@ -70,6 +92,7 @@ class LifeLogBackendServiceProvider extends ClarionPackageServiceProvider
                 SyncAccountsCommand::class,
                 SyncAccountCommand::class,
                 PruneSyncAttemptsCommand::class,
+                PruneConnectionAttemptsCommand::class,
             ]);
 
             // Schedule hourly rollup, daily pruning, and hourly sync sweep
@@ -80,6 +103,7 @@ class LifeLogBackendServiceProvider extends ClarionPackageServiceProvider
                 Schedule::command('life-log:prune-raw-sessions')->daily()->withoutOverlapping();
                 Schedule::command('life-log:sync-accounts')->hourly()->withoutOverlapping();
                 Schedule::command('life-log:prune-sync-attempts')->daily()->withoutOverlapping();
+                Schedule::command('life-log:prune-connection-attempts')->hourly()->withoutOverlapping();
             });
         }
 

@@ -6,6 +6,7 @@ use Tests\TestCase;
 use Tests\Support\FakeSpanService;
 use Tests\Support\FakeStepService;
 use ClarionApp\LifeLogBackend\Contracts\ExternalHealthService;
+use ClarionApp\LifeLogBackend\External\AuthorizationGrant;
 use ClarionApp\LifeLogBackend\External\ConnectionResult;
 use ClarionApp\LifeLogBackend\External\DisconnectResult;
 use ClarionApp\LifeLogBackend\External\PageCursor;
@@ -163,6 +164,7 @@ class NormalizationBoundaryTest extends TestCase
             'fetch' => ResultPage::class,
             'renewAccess' => RenewalResult::class,
             'disconnect' => DisconnectResult::class,
+            'completeConnection' => AuthorizationGrant::class,
         ];
 
         $reflection = new ReflectionClass(ExternalHealthService::class);

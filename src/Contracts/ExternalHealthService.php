@@ -3,6 +3,7 @@
 namespace ClarionApp\LifeLogBackend\Contracts;
 
 use ClarionApp\LifeLogBackend\Exceptions\HealthServiceFailure;
+use ClarionApp\LifeLogBackend\External\AuthorizationGrant;
 use ClarionApp\LifeLogBackend\External\ConnectionResult;
 use ClarionApp\LifeLogBackend\External\DisconnectResult;
 use ClarionApp\LifeLogBackend\External\PageCursor;
@@ -13,7 +14,7 @@ use ClarionApp\LifeLogBackend\Vocabulary\SessionType;
 use Carbon\CarbonImmutable;
 
 /**
- * The four behaviors every external health service supports (FR-008).
+ * The five behaviors every external health service supports (FR-008).
  *
  * Everything a service is peculiar about — field names, payload nesting, source
  * units, error shapes, how it pages — is consumed inside the implementation.
@@ -33,6 +34,12 @@ use Carbon\CarbonImmutable;
  *     a cursor must survive fromString(toString()).
  *  6. Never name a type outside the vocabulary — enforced by the enum return type
  *     of supportedTypes().
+ *  7. Never hold a credential across calls. Fetch the current credential from
+ *     ServiceCredentialProvider inside each method that needs one. HealthServiceRegistry
+ *     memoises instances, so a credential read in a constructor survives every
+ *     rotation for the life of the worker process — the service keeps presenting a
+ *     secret the operator has already replaced, and the failure appears only after a
+ *     rotation, only in a long-lived worker, and never in a single-request test.
  */
 interface ExternalHealthService
 {
@@ -90,4 +97,28 @@ interface ExternalHealthService
 
     /** Behavior 4 — disconnect. Succeeds for an already-disconnected account. */
     public function disconnect(string $userId): DisconnectResult;
+
+    /**
+     * Behavior 5 — exchange an approved consent for a usable authorization.
+     *
+     * Called once, after the package has verified the callback: the state matched a
+     * live single-use attempt, the attempt belongs to the signed-in user, and the
+     * redirect address matches the registered one. An implementation MUST NOT
+     * re-derive any of that; it receives a callback the package has already
+     * established is genuine.
+     *
+     * $redirectUri is passed because most providers require the token exchange to
+     * repeat the value used at authorization. It is the registered value, never a
+     * value taken from the request.
+     *
+     * @throws HealthServiceFailure CredentialsRejected when the provider refuses the
+     *         code or the credential; InvalidRequest when the code is malformed or
+     *         already redeemed. The exception message MUST NOT contain the code, the
+     *         client secret, or any provider response body.
+     */
+    public function completeConnection(
+        string $userId,
+        string $code,
+        string $redirectUri,
+    ): AuthorizationGrant;
 }

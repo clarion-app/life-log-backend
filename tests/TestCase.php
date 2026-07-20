@@ -244,6 +244,7 @@ abstract class TestCase extends BaseTestCase
                 $table->timestamp('last_success_at')->nullable();
                 $table->timestamp('last_failure_at')->nullable();
                 $table->string('last_failure_kind', 32)->nullable();
+                $table->string('needs_attention_reason', 32)->nullable();
                 $table->timestamps();
 
                 $table->unique('connected_account_id');
@@ -273,6 +274,64 @@ abstract class TestCase extends BaseTestCase
 
                 $table->index(['connected_account_id', 'started_at']);
                 $table->index('started_at');
+            });
+        }
+
+        // life_log_service_credentials
+        if (!Schema::hasTable('life_log_service_credentials')) {
+            Schema::create('life_log_service_credentials', function (Blueprint $table) {
+                $table->uuid('id')->primary();
+                $table->string('external_service', 64);
+                $table->string('client_id', 255);
+                $table->text('client_secret');
+                $table->string('redirect_uri', 512);
+                $table->unsignedInteger('version')->default(1);
+                $table->timestamp('secret_updated_at')->useCurrent();
+                $table->timestamp('last_verified_at')->nullable();
+                $table->string('last_verification_outcome', 32)->nullable();
+                $table->timestamps();
+                $table->softDeletes();
+
+                $table->unique(['external_service', 'deleted_at']);
+            });
+        }
+
+        // life_log_connection_attempts
+        if (!Schema::hasTable('life_log_connection_attempts')) {
+            Schema::create('life_log_connection_attempts', function (Blueprint $table) {
+                $table->uuid('id')->primary();
+                $table->uuid('user_id');
+                $table->string('external_service', 64);
+                $table->char('state_hash', 64)->unique();
+                $table->string('redirect_uri', 512);
+                $table->timestamp('expires_at');
+                $table->timestamp('consumed_at')->nullable();
+                $table->timestamps();
+
+                $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
+                $table->index('expires_at');
+                $table->index(['user_id', 'external_service']);
+            });
+        }
+
+        // life_log_account_authorizations
+        if (!Schema::hasTable('life_log_account_authorizations')) {
+            Schema::create('life_log_account_authorizations', function (Blueprint $table) {
+                $table->uuid('id')->primary();
+                $table->uuid('connected_account_id');
+                $table->text('access_token');
+                $table->text('refresh_token')->nullable();
+                $table->timestamp('expires_at')->nullable();
+                $table->text('scopes')->nullable();
+                $table->unsignedInteger('credential_version');
+                $table->timestamp('refreshed_at')->nullable();
+                $table->timestamps();
+
+                $table->foreign('connected_account_id')
+                    ->references('id')
+                    ->on('life_log_connected_accounts')
+                    ->onDelete('cascade');
+                $table->unique('connected_account_id');
             });
         }
     }

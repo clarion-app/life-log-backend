@@ -6,6 +6,7 @@ use Tests\TestCase;
 use ClarionApp\LifeLogBackend\Contracts\ExternalHealthService;
 use ClarionApp\LifeLogBackend\Contracts\FailureKind;
 use ClarionApp\LifeLogBackend\Exceptions\HealthServiceFailure;
+use ClarionApp\LifeLogBackend\External\AuthorizationGrant;
 use ClarionApp\LifeLogBackend\External\ConnectionResult;
 use ClarionApp\LifeLogBackend\External\DisconnectResult;
 use ClarionApp\LifeLogBackend\External\PageCursor;
@@ -230,6 +231,52 @@ abstract class HealthServiceConformanceTestCase extends TestCase
             'Disconnecting an already-disconnected account must succeed — a caller retrying after a '
             . 'partial failure would otherwise never converge.',
         );
+    }
+
+    // ------------------------------------------------------------- behavior 5
+
+    /** @test  behavior 5 — completeConnection returns an AuthorizationGrant */
+    public function itCompletesAConnection(): void
+    {
+        $service = $this->service();
+        $grant = $service->completeConnection(self::USER, 'test-code', 'https://example.com/callback');
+
+        $this->assertInstanceOf(AuthorizationGrant::class, $grant);
+        $this->assertNotSame('', $grant->accessToken);
+        $this->assertNotSame('', $grant->refreshToken);
+        $this->assertTrue(
+            $grant->expiresAt->greaterThan(CarbonImmutable::now()),
+            'An expired grant on return means the token exchange succeeded but is already useless.',
+        );
+    }
+
+    /**
+     * @test  completeConnection never leaks the code or the secret in an error message
+     *
+     * A failure here means the token exchange rejected the code or the credential.
+     * The message is safe for logging, so it must not contain the code, the client
+     * secret, or any provider response body.
+     */
+    public function itDoesNotLeakCredentialsInCompleteConnectionErrors(): void
+    {
+        $service = $this->service();
+        $secret = 'sk_test_4eC39HqLyjWDarjtT1zdp7dc';
+
+        // The service may or may not have a way to fail completeConnection.
+        // If it does, the message must not leak sensitive values.
+        try {
+            $service->completeConnection(self::USER, 'bogus-code', 'https://example.com/callback');
+        } catch (HealthServiceFailure $e) {
+            $message = $e->getMessage();
+
+            $this->assertStringNotContainsString('bogus-code', $message);
+            $this->assertStringNotContainsString($secret, $message);
+            $this->assertContains(
+                $e->kind,
+                [FailureKind::CredentialsRejected, FailureKind::InvalidRequest],
+                'completeConnection failures should be CredentialsRejected or InvalidRequest.',
+            );
+        }
     }
 
     // ------------------------------------------- behavior 2: the paging contract
@@ -481,6 +528,7 @@ abstract class HealthServiceConformanceTestCase extends TestCase
         $drained = $this->drainAll($service);
         $returned = [
             $service->beginConnection(self::USER),
+            $service->completeConnection(self::USER, 'test-code', 'https://example.com/callback'),
             $service->renewAccess(self::USER),
             $service->disconnect(self::USER),
             ...$drained['measurements'],
@@ -516,7 +564,7 @@ abstract class HealthServiceConformanceTestCase extends TestCase
             return true;
         }
 
-        if ($value instanceof PageCursor) {
+        if ($value instanceof PageCursor || $value instanceof CarbonImmutable) {
             return true;
         }
 

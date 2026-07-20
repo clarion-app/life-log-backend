@@ -6,6 +6,7 @@ use ClarionApp\LifeLogBackend\Contracts\ExternalHealthService;
 use ClarionApp\LifeLogBackend\Exceptions\HealthServiceFailure;
 use ClarionApp\LifeLogBackend\Exceptions\ImplausibleTimestampException;
 use ClarionApp\LifeLogBackend\Exceptions\UnconvertibleUnitException;
+use ClarionApp\LifeLogBackend\External\AuthorizationGrant;
 use ClarionApp\LifeLogBackend\External\ConnectionResult;
 use ClarionApp\LifeLogBackend\External\DisconnectResult;
 use ClarionApp\LifeLogBackend\External\PageCursor;
@@ -155,6 +156,22 @@ final class FakeStepService implements ExternalHealthService
 
         // Idempotent: disconnecting an account that was never connected succeeds.
         return DisconnectResult::confirmed();
+    }
+
+    public function completeConnection(
+        string $userId,
+        string $code,
+        string $redirectUri,
+    ): AuthorizationGrant {
+        $this->failIfForced();
+
+        return new AuthorizationGrant(
+            accessToken: 'step-access-' . $userId,
+            refreshToken: 'step-refresh-' . $userId,
+            expiresAt: CarbonImmutable::now()->addHours(2),
+            scopes: 'activity',
+            externalAccountId: 'step-acc-' . $userId,
+        );
     }
 
     /** Every cursor issued so far stops being honored. */

@@ -4,6 +4,7 @@ namespace Tests\Support;
 
 use ClarionApp\LifeLogBackend\Contracts\ExternalHealthService;
 use ClarionApp\LifeLogBackend\Exceptions\HealthServiceFailure;
+use ClarionApp\LifeLogBackend\External\AuthorizationGrant;
 use ClarionApp\LifeLogBackend\External\ConnectionResult;
 use ClarionApp\LifeLogBackend\External\DisconnectResult;
 use ClarionApp\LifeLogBackend\External\PageCursor;
@@ -46,10 +47,11 @@ final class StubBandService implements ExternalHealthService
 
     public function beginConnection(string $userId): ConnectionResult
     {
+        $state = 'band-' . bin2hex(random_bytes(32));
         return new ConnectionResult(
             externalService: self::NAME,
-            authorizationUrl: 'https://band.example/authorize',
-            state: 'band-' . substr(sha1($userId . self::NAME), 0, 16),
+            authorizationUrl: 'https://band.example/authorize?state=' . urlencode($state),
+            state: $state,
         );
     }
 
@@ -94,5 +96,19 @@ final class StubBandService implements ExternalHealthService
     public function disconnect(string $userId): DisconnectResult
     {
         return DisconnectResult::confirmed();
+    }
+
+    public function completeConnection(
+        string $userId,
+        string $code,
+        string $redirectUri,
+    ): AuthorizationGrant {
+        return new AuthorizationGrant(
+            accessToken: 'band-access-' . $userId,
+            refreshToken: 'band-refresh-' . $userId,
+            expiresAt: CarbonImmutable::now()->addHours(2),
+            scopes: 'heart_rate',
+            externalAccountId: 'band-acc-' . $userId,
+        );
     }
 }

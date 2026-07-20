@@ -5,6 +5,7 @@ namespace Tests\Support;
 use ClarionApp\LifeLogBackend\Contracts\ExternalHealthService;
 use ClarionApp\LifeLogBackend\Contracts\FailureKind;
 use ClarionApp\LifeLogBackend\Exceptions\HealthServiceFailure;
+use ClarionApp\LifeLogBackend\External\AuthorizationGrant;
 use ClarionApp\LifeLogBackend\External\ConnectionResult;
 use ClarionApp\LifeLogBackend\External\DisconnectResult;
 use ClarionApp\LifeLogBackend\External\PageCursor;
@@ -169,6 +170,39 @@ final class ScriptedSyncService implements ExternalHealthService
         return $this;
     }
 
+    /** Grant to return from completeConnection, or null to use default. */
+    private ?AuthorizationGrant $completeConnectionGrant = null;
+
+    /** Exception to throw from completeConnection, or null for success. */
+    private ?HealthServiceFailure $completeConnectionFailure = null;
+
+    /** @var list<array{userId: string, code: string, redirectUri: string}> */
+    public array $completeConnectionCalls = [];
+
+    /** Script completeConnection to return a specific grant. */
+    public function completeConnectionWith(AuthorizationGrant $grant): self
+    {
+        $this->completeConnectionGrant = $grant;
+        $this->completeConnectionFailure = null;
+        return $this;
+    }
+
+    /** Script completeConnection to throw CredentialsRejected. */
+    public function completeConnectionThrowsCredentialsRejected(): self
+    {
+        $this->completeConnectionFailure = HealthServiceFailure::credentialsRejected('credentials rejected');
+        $this->completeConnectionGrant = null;
+        return $this;
+    }
+
+    /** Script completeConnection to throw InvalidRequest. */
+    public function completeConnectionThrowsInvalidRequest(): self
+    {
+        $this->completeConnectionFailure = HealthServiceFailure::invalidRequest('invalid request');
+        $this->completeConnectionGrant = null;
+        return $this;
+    }
+
     /**
      * Replace the page sequence (simulates a second pass with late/corrected data).
      * Resets the page index but keeps the call count.
@@ -255,6 +289,35 @@ final class ScriptedSyncService implements ExternalHealthService
     public function disconnect(string $userId): DisconnectResult
     {
         return DisconnectResult::confirmed();
+    }
+
+    public function completeConnection(
+        string $userId,
+        string $code,
+        string $redirectUri,
+    ): AuthorizationGrant {
+        $this->completeConnectionCalls[] = [
+            'userId' => $userId,
+            'code' => $code,
+            'redirectUri' => $redirectUri,
+        ];
+
+        if ($this->completeConnectionFailure !== null) {
+            throw $this->completeConnectionFailure;
+        }
+
+        if ($this->completeConnectionGrant !== null) {
+            return $this->completeConnectionGrant;
+        }
+
+        // Default: return a standard grant
+        return new AuthorizationGrant(
+            accessToken: 'access-token-for-' . $userId,
+            refreshToken: 'refresh-token-for-' . $userId,
+            expiresAt: CarbonImmutable::now()->addHours(2),
+            scopes: 'read:health_data',
+            externalAccountId: 'ext-' . $userId,
+        );
     }
 
     /** Get the recorded fetch calls. */

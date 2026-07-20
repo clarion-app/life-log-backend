@@ -33,6 +33,14 @@ class ConnectedAccount extends Model
     }
 
     /**
+     * The authorization row for this account (created at connection, replaced on reconnect).
+     */
+    public function authorization(): HasOne
+    {
+        return $this->hasOne(AccountAuthorization::class, 'connected_account_id', 'id');
+    }
+
+    /**
      * Reset sync health for a reconnect or manual reset.
      *
      * Sets sync_state to normal, zeroes the counter, clears gate + cursor triple,
@@ -51,8 +59,29 @@ class ConnectedAccount extends Model
             $state->cursor = null;
             $state->cursor_since = null;
             $state->cursor_until = null;
+            $state->needs_attention_reason = null;
             // synced_through_at preserved intentionally
             $state->save();
         }
+    }
+
+    /**
+     * The reason this connection needs attention, or null if healthy.
+     *
+     * A management-side reason (credential_rotated, credential_removed, etc.)
+     * outranks the last provider failure — "reconnect, the credential changed"
+     * is more actionable than "credentials_rejected", which is only its symptom.
+     */
+    public function needsAttentionReason(): ?string
+    {
+        if ($this->sync_state !== 'needs_attention') {
+            return null;
+        }
+
+        $state = $this->syncState;
+
+        return $state?->needs_attention_reason
+            ?? $state?->last_failure_kind
+            ?? 'unknown';
     }
 }

@@ -131,20 +131,6 @@ class SchemaBootstrapDriftTest extends TestCase
             'life_log_connected_accounts columns drift from migration'
         );
 
-        // life_log_account_sync_states columns from migration 000002 (056)
-        $expectedSyncStateColumns = [
-            'id', 'connected_account_id', 'synced_through_at', 'cursor',
-            'cursor_since', 'cursor_until', 'consecutive_failures',
-            'next_attempt_at', 'last_success_at', 'last_failure_at',
-            'last_failure_kind', 'created_at', 'updated_at',
-        ];
-        $actualSyncStateColumns = Schema::getColumnListing('life_log_account_sync_states');
-        $this->assertEquals(
-            $expectedSyncStateColumns,
-            $actualSyncStateColumns,
-            'life_log_account_sync_states columns drift from migration'
-        );
-
         // life_log_sync_attempts columns from migration 000003 (056)
         $expectedSyncAttemptColumns = [
             'id', 'connected_account_id', 'user_id', 'external_service',
@@ -158,6 +144,76 @@ class SchemaBootstrapDriftTest extends TestCase
             $expectedSyncAttemptColumns,
             $actualSyncAttemptColumns,
             'life_log_sync_attempts columns drift from migration'
+        );
+
+        // life_log_account_sync_states — needs_attention_reason added by migration 000004 (057)
+        $expectedSyncStateColumns = [
+            'id', 'connected_account_id', 'synced_through_at', 'cursor',
+            'cursor_since', 'cursor_until', 'consecutive_failures',
+            'next_attempt_at', 'last_success_at', 'last_failure_at',
+            'last_failure_kind', 'needs_attention_reason', 'created_at', 'updated_at',
+        ];
+        $actualSyncStateColumns = Schema::getColumnListing('life_log_account_sync_states');
+        $this->assertEquals(
+            $expectedSyncStateColumns,
+            $actualSyncStateColumns,
+            'life_log_account_sync_states columns drift from migration (including needs_attention_reason)'
+        );
+
+        // life_log_service_credentials columns from migration 000001 (057)
+        $expectedCredentialColumns = [
+            'id', 'external_service', 'client_id', 'client_secret', 'redirect_uri',
+            'version', 'secret_updated_at', 'last_verified_at',
+            'last_verification_outcome', 'created_at', 'updated_at', 'deleted_at',
+        ];
+        $actualCredentialColumns = Schema::getColumnListing('life_log_service_credentials');
+        $this->assertEquals(
+            $expectedCredentialColumns,
+            $actualCredentialColumns,
+            'life_log_service_credentials columns drift from migration'
+        );
+
+        // life_log_connection_attempts columns from migration 000002 (057)
+        $expectedAttemptColumns = [
+            'id', 'user_id', 'external_service', 'state_hash', 'redirect_uri',
+            'expires_at', 'consumed_at', 'created_at', 'updated_at',
+        ];
+        $actualAttemptColumns = Schema::getColumnListing('life_log_connection_attempts');
+        $this->assertEquals(
+            $expectedAttemptColumns,
+            $actualAttemptColumns,
+            'life_log_connection_attempts columns drift from migration'
+        );
+
+        // life_log_account_authorizations columns from migration 000003 (057)
+        $expectedAuthColumns = [
+            'id', 'connected_account_id', 'access_token', 'refresh_token',
+            'expires_at', 'scopes', 'credential_version', 'refreshed_at',
+            'created_at', 'updated_at',
+        ];
+        $actualAuthColumns = Schema::getColumnListing('life_log_account_authorizations');
+        $this->assertEquals(
+            $expectedAuthColumns,
+            $actualAuthColumns,
+            'life_log_account_authorizations columns drift from migration'
+        );
+
+        // life_log_service_credentials index checks
+        $this->assertTrue(
+            Schema::hasColumns('life_log_service_credentials', ['external_service', 'deleted_at']),
+            'life_log_service_credentials should have external_service and deleted_at columns for unique index'
+        );
+
+        // life_log_connection_attempts index checks
+        $this->assertTrue(
+            Schema::hasColumn('life_log_connection_attempts', 'state_hash'),
+            'life_log_connection_attempts should have unique state_hash column'
+        );
+
+        // life_log_account_authorizations uniqueness check
+        $this->assertTrue(
+            Schema::hasColumn('life_log_account_authorizations', 'connected_account_id'),
+            'life_log_account_authorizations should have unique connected_account_id column'
         );
     }
 }
