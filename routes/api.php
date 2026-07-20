@@ -21,6 +21,7 @@ Route::group(['prefix'=>$this->routePrefix, 'middleware' => [StartSession::class
     Route::delete('service-credentials/{service}', [ServiceCredentialController::class, 'destroy']);
 
     // Connected account endpoints (callback must be declared before {id})
+    Route::get('connected-accounts', [ConnectedAccountController::class, 'index']);
     Route::post('connected-accounts', [ConnectedAccountController::class, 'store']);
     Route::post('connected-accounts/callback', [ConnectedAccountController::class, 'callback']);
     Route::post('connected-accounts/{id}/sync', [ConnectedAccountController::class, 'sync']);

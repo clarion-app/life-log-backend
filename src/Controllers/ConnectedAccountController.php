@@ -56,16 +56,67 @@ class ConnectedAccountController extends Controller
     }
 
     /**
+     * List the authenticated user's connections.
+     *
+     * Each entry says what the service is, whether it is working, and when
+     * it last succeeded — enough on its own to tell the user what needs
+     * their attention. A connection that has never synced successfully
+     * reports null, never a fabricated or zero timestamp.
+     *
+     * GET /connected-accounts
+     *
+     * 200 { "connections": [ … ] }
+     */
+    public function index(): JsonResponse
+    {
+        $accounts = ConnectedAccount::query()
+            ->where('user_id', auth()->id())
+            ->with('syncState')
+            ->orderBy('connected_at')
+            ->get();
+
+        $connections = $accounts->map(function (ConnectedAccount $account): array {
+            $state = $account->syncState;
+
+            return [
+                'id' => $account->id,
+                'external_service' => $account->external_service,
+                'status' => $account->sync_state === 'needs_attention'
+                    ? 'needs_attention'
+                    : 'healthy',
+                'last_successful_sync_at' => $state?->last_success_at,
+                'connected_at' => $account->connected_at,
+                'needs_attention_reason' => $account->needsAttentionReason(),
+            ];
+        })->all();
+
+        return response()->json(['connections' => $connections]);
+    }
+
+    /**
      * Trigger an on-demand sync for a connected account.
      *
      * Returns 202 with {"status": "queued"} on success,
      * or 202 with {"status": "already_running"} if a sync is in progress.
+     * A connection that needs attention is refused with 409 and the reason
+     * rather than started: the run would fail for a cause the user has to
+     * resolve first, and a queued-then-failed attempt tells them less than
+     * the reason does.
      * A connection the caller does not own returns 404.
      */
     public function sync(string $id): JsonResponse
     {
-        if (! $this->ownedAccount($id)) {
+        $account = $this->ownedAccount($id);
+
+        if (! $account) {
             return $this->notFound();
+        }
+
+        if ($account->sync_state === 'needs_attention') {
+            return response()->json([
+                'error' => 'needs_attention',
+                'reason' => $account->needsAttentionReason(),
+            ], 409);
         }
 
         // Check lock status BEFORE dispatching to return already_running
