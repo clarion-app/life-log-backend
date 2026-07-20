@@ -261,3 +261,39 @@ LIFE_LOG_RAW_SESSION_RETENTION_DAYS=90
 changes when code does, so it belongs to the deployment step, not the clock.
 Running it repeatedly is a true no-op — a row that already agrees is left
 untouched, timestamps included.
+
+---
+
+# Account Connections
+
+Every service credential and every user's connection to an external service
+is managed entirely through the API — `/service-credentials` and
+`/connected-accounts`. Nothing is configured from a file, and nothing
+requires a restart.
+
+## Two things to know before you rely on this in production
+
+**`APP_KEY` rotation is unrecoverable for this data.** `ServiceCredential.client_secret`
+and `AccountAuthorization.access_token`/`refresh_token` use Laravel's `encrypted`
+cast, which is keyed off `APP_KEY`. Rotating `APP_KEY` renders every stored
+secret and token unreadable — there is no re-encryption path in this feature.
+Recovery is manual: re-enter each service's credentials via `PUT
+/service-credentials/{service}`, and have each user reconnect their account.
+Plan `APP_KEY` rotation accordingly.
+
+**Replicated credential secrets are plaintext on the chain, permanently.**
+`ServiceCredential` is bridged like every other model in this package, and the
+bridge publishes `toArray()` — the *decrypted* secret — so that a credential
+configured on one node is immediately usable on every other (SC-002a). The
+`encrypted` cast protects the local database; it does not, and cannot, protect
+the replicated copy, because each node has its own `APP_KEY` and none of them
+could decrypt a secret encrypted under a different one. The chain is
+append-only, so rotating a secret does not retract the previous value — every
+value a credential ever held remains in stream history permanently. This is
+only safe on a network of nodes the operator actually trusts; it is not a
+confidentiality boundary against an untrusted peer.
+
+Everything else about a credential's exposure is a solved problem: it never
+appears in an API response, error, or log (`CredentialSecretExposureTest`,
+`LogRedactionTest`). This is the one place the answer is "the operator's
+network is the trust boundary," not "the code stops it."

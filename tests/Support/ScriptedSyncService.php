@@ -228,10 +228,17 @@ final class ScriptedSyncService implements ExternalHealthService
 
     public function beginConnection(string $userId): ConnectionResult
     {
+        // A real 32-byte-minimum state, not a fixed short literal — matching
+        // what any conformant implementation must produce. ConnectionAttemptFactory
+        // rejects anything under 32 bytes of entropy (research §4), and this
+        // double is exercised through that same gate whenever a test drives
+        // the real POST /connected-accounts endpoint (quickstart.md §3, T093).
+        $state = base64_encode(random_bytes(32));
+
         return new ConnectionResult(
             externalService: self::NAME,
-            authorizationUrl: 'https://scripted.example/oauth',
-            state: 'state-test',
+            authorizationUrl: 'https://scripted.example/authorize?client_id=demo-client&state=' . urlencode($state),
+            state: $state,
         );
     }
 

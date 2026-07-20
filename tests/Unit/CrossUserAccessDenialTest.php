@@ -155,4 +155,54 @@ class CrossUserAccessDenialTest extends TestCase
         $this->assertStringNotContainsString($this->userB->id, $body);
         $this->assertStringNotContainsString($this->accountB->id, $body);
     }
+
+    /** @test T089 — index returns only the caller's own connections */
+    public function indexReturnsOnlyTheCallersOwnConnections()
+    {
+        $accountA = ConnectedAccount::create([
+            'id' => (string) Str::uuid(),
+            'user_id' => $this->userA->id,
+            'external_service' => 'fake-step',
+            'sync_state' => 'normal',
+            'connected_at' => now()->subDay(),
+        ]);
+
+        $response = $this->getJson('/api/clarion-app/life-log/connected-accounts');
+
+        $response->assertStatus(200);
+        $ids = array_column($response->json('connections'), 'id');
+
+        $this->assertContains($accountA->id, $ids);
+        $this->assertNotContains($this->accountB->id, $ids);
+    }
+
+    /** @test T089 — destroy on another user's connection returns 404 */
+    public function destroyOnAnotherUsersConnectionReturns404()
+    {
+        $response = $this->deleteJson(
+            "/api/clarion-app/life-log/connected-accounts/{$this->accountB->id}"
+        );
+
+        $response->assertStatus(404);
+
+        // The foreign connection is untouched — no local teardown occurred.
+        $this->accountB->refresh();
+        $this->assertNull($this->accountB->deleted_at);
+    }
+
+    /** @test T089 — destroy refusal is indistinguishable from a nonexistent id */
+    public function destroyOnAnotherUsersConnectionIsIndistinguishableFromNonexistent()
+    {
+        $foreign = $this->deleteJson(
+            "/api/clarion-app/life-log/connected-accounts/{$this->accountB->id}"
+        );
+
+        $missing = $this->deleteJson(
+            "/api/clarion-app/life-log/connected-accounts/{$this->nonexistentId()}"
+        );
+
+        $this->assertSame($missing->getStatusCode(), $foreign->getStatusCode());
+        $this->assertSame($missing->getContent(), $foreign->getContent());
+        $this->assertNotSame(403, $foreign->getStatusCode());
+    }
 }

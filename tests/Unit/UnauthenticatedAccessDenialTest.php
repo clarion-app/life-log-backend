@@ -10,8 +10,8 @@ use Tests\TestCase;
  * 401 — including the consent return callback, which claims no exception
  * (FR-014a, FR-024, FR-025).
  *
- * This covers the endpoint surface that exists today. The remaining
- * endpoints are folded in as they land.
+ * Covers the full eleven-endpoint surface: five credential endpoints and
+ * six connection endpoints (T089).
  */
 class UnauthenticatedAccessDenialTest extends TestCase
 {
@@ -56,6 +56,8 @@ class UnauthenticatedAccessDenialTest extends TestCase
             ]],
             'connection sync'     => ['post', "connected-accounts/{$id}/sync", []],
             'connection show'     => ['get', "connected-accounts/{$id}", []],
+            'connection index'    => ['get', 'connected-accounts', []],
+            'connection destroy'  => ['delete', "connected-accounts/{$id}", []],
         ];
     }
 
