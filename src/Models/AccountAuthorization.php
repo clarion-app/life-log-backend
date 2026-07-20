@@ -16,7 +16,7 @@ class AccountAuthorization extends Model
 {
     protected $table = 'life_log_account_authorizations';
 
-    protected $keyType = 'uuid';
+    protected $keyType = 'string';
     public $incrementing = false;
 
     protected $fillable = [

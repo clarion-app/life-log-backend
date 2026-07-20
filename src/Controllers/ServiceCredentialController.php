@@ -180,11 +180,6 @@ class ServiceCredentialController extends Controller
             return response()->json(['error' => 'not_found'], 404);
         }
 
-        // Count connections before deletion
-        $connectionCount = ConnectedAccount::where('external_service', $service)
-            ->whereNull('deleted_at')
-            ->count();
-
         // Soft-delete the credential
         $credential->delete();
 

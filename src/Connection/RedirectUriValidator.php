@@ -106,9 +106,26 @@ final class RedirectUriValidator
      */
     public function matchesExact(string $submitted, string $registered): bool
     {
+        // A submitted value that is not a well-formed absolute URI cannot match
+        // anything, and must not reach canonicalise() — which assumes a scheme
+        // and host are present.
+        if (! $this->isCanonicalisable($submitted) || ! $this->isCanonicalisable($registered)) {
+            return false;
+        }
+
         $submittedCanonical = $this->canonicalise($submitted);
         $registeredCanonical = $this->canonicalise($registered);
 
         return hash_equals($registeredCanonical, $submittedCanonical);
+    }
+
+    /**
+     * Whether canonicalise() can process this URI without assuming parts of it.
+     */
+    private function isCanonicalisable(string $uri): bool
+    {
+        $parsed = parse_url($uri);
+
+        return is_array($parsed) && isset($parsed['scheme'], $parsed['host']);
     }
 }

@@ -31,6 +31,15 @@ class CallbackForgeryTest extends TestCase
             'password' => 'hashed',
         ]);
 
+        // Register the service. Without this the callback short-circuits on
+        // the "is this service registered?" check and every case below returns
+        // its 422 for the wrong reason — never reaching ConnectionAttemptVerifier,
+        // which is the thing these cases exist to exercise (research §6).
+        app(\ClarionApp\LifeLogBackend\External\HealthServiceRegistry::class)->register(
+            \Tests\Support\FakeStepService::NAME,
+            fn () => new \Tests\Support\FakeStepService(),
+        );
+
         // Configure a credential
         ServiceCredential::create([
             'id' => (string) \Illuminate\Support\Str::uuid(),
@@ -214,6 +223,37 @@ class CallbackForgeryTest extends TestCase
         $response->assertStatus(422);
         $response->assertExactJson($this->uniformErrorBody());
         $this->assertDatabaseCount('life_log_connected_accounts', 0);
+    }
+
+    /**
+     * @test
+     *
+     * research §7 — the comparison is byte-identical *after canonicalisation*,
+     * not on the raw strings. A scheme and host differing only in case name the
+     * same address, so refusing them would reject a legitimate return; the
+     * prefix near-miss above must still be refused.
+     */
+    public function equivalentlyCasedRedirectUriIsAccepted()
+    {
+        $state = base64_encode(random_bytes(32));
+        ConnectionAttempt::create([
+            'id' => (string) \Illuminate\Support\Str::uuid(),
+            'user_id' => $this->user->id,
+            'external_service' => 'fake-step',
+            'state_hash' => hash('sha256', $state),
+            'redirect_uri' => 'https://example.com/callback',
+            'expires_at' => now()->addHour(),
+        ]);
+
+        $response = $this->postJson("/api/clarion-app/life-log/connected-accounts/callback", [
+            'external_service' => 'fake-step',
+            'state' => $state,
+            'code' => 'some-code',
+            'redirect_uri' => 'HTTPS://EXAMPLE.COM/callback',
+        ]);
+
+        $response->assertStatus(201);
+        $this->assertDatabaseCount('life_log_connected_accounts', 1);
     }
 
     /** @test */

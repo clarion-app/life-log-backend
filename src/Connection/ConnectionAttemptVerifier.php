@@ -14,6 +14,11 @@ use ClarionApp\LifeLogBackend\Models\ConnectionAttempt;
  */
 final class ConnectionAttemptVerifier
 {
+    public function __construct(
+        private RedirectUriValidator $redirectUriValidator,
+    ) {
+    }
+
     /**
      * Verify and atomically claim a connection attempt.
      *
@@ -52,8 +57,12 @@ final class ConnectionAttemptVerifier
             return null;
         }
 
-        // Check 5: Redirect URI matches exactly
-        if ($attempt->redirect_uri !== $redirectUri) {
+        // Check 5: Redirect URI matches the registered one exactly, compared
+        // after canonicalisation (research §7) — an equivalent-but-differently-
+        // cased scheme or host is the same address and must not be refused,
+        // while a prefix near-miss like https://good.example.com.evil.test/
+        // still is.
+        if (! $this->redirectUriValidator->matchesExact($redirectUri, $attempt->redirect_uri)) {
             return null;
         }
 

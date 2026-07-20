@@ -14,7 +14,7 @@ class ConnectionAttempt extends Model
 {
     protected $table = 'life_log_connection_attempts';
 
-    protected $keyType = 'uuid';
+    protected $keyType = 'string';
     public $incrementing = false;
 
     protected $fillable = [

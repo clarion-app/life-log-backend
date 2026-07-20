@@ -18,13 +18,20 @@ class SweepJitterTest extends TestCase
 
     private function makeAccount(string $id, string $syncState = 'normal'): ConnectedAccount
     {
-        return ConnectedAccount::create([
-            'id' => $id,
+        // `id` is not fillable, so it cannot be passed through create() — the
+        // boot listener would assign a random uuid instead and the jitter this
+        // test calls deterministic would be anything but.
+        $account = new ConnectedAccount([
             'user_id' => $id, // Use id as user_id to satisfy unique constraint
             'external_service' => 'test-service',
             'sync_state' => $syncState,
             'connected_at' => CarbonImmutable::now()->subDays(10),
         ]);
+
+        $account->id = $id;
+        $account->save();
+
+        return $account;
     }
 
     /* ------------------------------------------------------------------
