@@ -3,17 +3,25 @@
 namespace ClarionApp\LifeLogBackend;
 
 use ClarionApp\Backend\ClarionPackageServiceProvider;
+use ClarionApp\LifeLogBackend\Commands\PruneRawMeasurementsCommand;
+use ClarionApp\LifeLogBackend\Commands\PruneRawSessionsCommand;
+use ClarionApp\LifeLogBackend\Commands\PruneSyncAttemptsCommand;
+use ClarionApp\LifeLogBackend\Commands\PromoteSessionsCommand;
+use ClarionApp\LifeLogBackend\Commands\RollupMeasurementsCommand;
+use ClarionApp\LifeLogBackend\Commands\SyncAccountCommand;
+use ClarionApp\LifeLogBackend\Commands\SyncAccountsCommand;
+use ClarionApp\LifeLogBackend\Commands\SyncVocabularyClassificationsCommand;
 use ClarionApp\LifeLogBackend\External\HealthServiceRegistry;
-use ClarionApp\LifeLogBackend\Services\RawMeasurementWriter;
+use ClarionApp\LifeLogBackend\Jobs\SyncConnectedAccountJob;
 use ClarionApp\LifeLogBackend\Services\HourlyMeasurementRollup;
+use ClarionApp\LifeLogBackend\Services\RawMeasurementWriter;
 use ClarionApp\LifeLogBackend\Services\RawSessionWriter;
 use ClarionApp\LifeLogBackend\Services\SessionPromoter;
-use ClarionApp\LifeLogBackend\Commands\RollupMeasurementsCommand;
-use ClarionApp\LifeLogBackend\Commands\PruneRawMeasurementsCommand;
-use ClarionApp\LifeLogBackend\Commands\PromoteSessionsCommand;
-use ClarionApp\LifeLogBackend\Commands\PruneRawSessionsCommand;
-use ClarionApp\LifeLogBackend\Commands\SyncVocabularyClassificationsCommand;
 use ClarionApp\LifeLogBackend\Services\UnmappedTypeRecorder;
+use ClarionApp\LifeLogBackend\Sync\AccountSyncRunner;
+use ClarionApp\LifeLogBackend\Sync\FailurePolicy;
+use ClarionApp\LifeLogBackend\Sync\SyncAttemptRecorder;
+use ClarionApp\LifeLogBackend\Sync\SyncLock;
 use Illuminate\Support\Facades\Schedule;
 
 class LifeLogBackendServiceProvider extends ClarionPackageServiceProvider
@@ -26,6 +34,12 @@ class LifeLogBackendServiceProvider extends ClarionPackageServiceProvider
         $this->app->singleton(UnmappedTypeRecorder::class);
         $this->app->singleton(RawSessionWriter::class);
         $this->app->singleton(SessionPromoter::class);
+
+        // Account sync infrastructure
+        $this->app->singleton(FailurePolicy::class);
+        $this->app->singleton(SyncLock::class);
+        $this->app->singleton(SyncAttemptRecorder::class);
+        $this->app->singleton(AccountSyncRunner::class);
 
         // Single registration point for external health services. Implementations
         // register themselves against this instance from their own providers, so
@@ -53,15 +67,35 @@ class LifeLogBackendServiceProvider extends ClarionPackageServiceProvider
                 SyncVocabularyClassificationsCommand::class,
                 PromoteSessionsCommand::class,
                 PruneRawSessionsCommand::class,
+                SyncAccountsCommand::class,
+                SyncAccountCommand::class,
+                PruneSyncAttemptsCommand::class,
             ]);
 
-            // Schedule hourly rollup and daily pruning without overlapping
+            // Schedule hourly rollup, daily pruning, and hourly sync sweep
             $this->app->booted(function () {
                 Schedule::command('life-log:rollup')->hourly()->withoutOverlapping();
                 Schedule::command('life-log:prune-raw-measurements')->daily()->withoutOverlapping();
                 Schedule::command('life-log:promote-sessions')->hourly()->withoutOverlapping();
                 Schedule::command('life-log:prune-raw-sessions')->daily()->withoutOverlapping();
+                Schedule::command('life-log:sync-accounts')->hourly()->withoutOverlapping();
+                Schedule::command('life-log:prune-sync-attempts')->daily()->withoutOverlapping();
             });
+        }
+
+        // Assert at boot that sync_lock_seconds exceeds the job timeout.
+        // A slow run's lock expires beneath it and a second run starts against
+        // the same cursor, which violates the checkpoint invariant.
+        $lockSeconds = (int) config('life-log.sync_lock_seconds', 900);
+        if ($lockSeconds <= SyncConnectedAccountJob::TIMEOUT) {
+            throw new \RuntimeException(
+                sprintf(
+                    'life-log.sync_lock_seconds (%d) must exceed SyncConnectedAccountJob::TIMEOUT (%d). '
+                    . 'A slow run would lose its lock before it finishes.',
+                    $lockSeconds,
+                    SyncConnectedAccountJob::TIMEOUT,
+                )
+            );
         }
     }
 }

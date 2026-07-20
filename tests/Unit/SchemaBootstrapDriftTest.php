@@ -118,5 +118,46 @@ class SchemaBootstrapDriftTest extends TestCase
             $actualStreamRegColumns,
             'data_stream_registries columns drift from bootstrap'
         );
+
+        // life_log_connected_accounts columns from migration 000001 (056)
+        $expectedConnectedAccountColumns = [
+            'id', 'user_id', 'external_service', 'sync_state', 'connected_at',
+            'created_at', 'updated_at', 'deleted_at',
+        ];
+        $actualConnectedAccountColumns = Schema::getColumnListing('life_log_connected_accounts');
+        $this->assertEquals(
+            $expectedConnectedAccountColumns,
+            $actualConnectedAccountColumns,
+            'life_log_connected_accounts columns drift from migration'
+        );
+
+        // life_log_account_sync_states columns from migration 000002 (056)
+        $expectedSyncStateColumns = [
+            'id', 'connected_account_id', 'synced_through_at', 'cursor',
+            'cursor_since', 'cursor_until', 'consecutive_failures',
+            'next_attempt_at', 'last_success_at', 'last_failure_at',
+            'last_failure_kind', 'created_at', 'updated_at',
+        ];
+        $actualSyncStateColumns = Schema::getColumnListing('life_log_account_sync_states');
+        $this->assertEquals(
+            $expectedSyncStateColumns,
+            $actualSyncStateColumns,
+            'life_log_account_sync_states columns drift from migration'
+        );
+
+        // life_log_sync_attempts columns from migration 000003 (056)
+        $expectedSyncAttemptColumns = [
+            'id', 'connected_account_id', 'user_id', 'external_service',
+            'trigger', 'outcome', 'range_since', 'range_until',
+            'pages_fetched', 'measurements_written', 'sessions_written',
+            'failure_kind', 'error_message', 'started_at', 'finished_at',
+            'created_at', 'updated_at',
+        ];
+        $actualSyncAttemptColumns = Schema::getColumnListing('life_log_sync_attempts');
+        $this->assertEquals(
+            $expectedSyncAttemptColumns,
+            $actualSyncAttemptColumns,
+            'life_log_sync_attempts columns drift from migration'
+        );
     }
 }

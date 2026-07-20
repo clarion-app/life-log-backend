@@ -213,6 +213,68 @@ abstract class TestCase extends BaseTestCase
                 $table->unique(['external_service', 'service_type_name']);
             });
         }
+
+        // life_log_connected_accounts
+        if (!Schema::hasTable('life_log_connected_accounts')) {
+            Schema::create('life_log_connected_accounts', function (Blueprint $table) {
+                $table->uuid('id')->primary();
+                $table->uuid('user_id');
+                $table->string('external_service', 64);
+                $table->string('sync_state', 32)->default('normal');
+                $table->timestamp('connected_at')->useCurrent();
+                $table->timestamps();
+                $table->softDeletes();
+
+                $table->unique(['user_id', 'external_service']);
+                $table->index('sync_state');
+            });
+        }
+
+        // life_log_account_sync_states
+        if (!Schema::hasTable('life_log_account_sync_states')) {
+            Schema::create('life_log_account_sync_states', function (Blueprint $table) {
+                $table->bigIncrements('id');
+                $table->uuid('connected_account_id');
+                $table->timestamp('synced_through_at')->nullable();
+                $table->text('cursor')->nullable();
+                $table->timestamp('cursor_since')->nullable();
+                $table->timestamp('cursor_until')->nullable();
+                $table->unsignedTinyInteger('consecutive_failures')->default(0);
+                $table->timestamp('next_attempt_at')->nullable();
+                $table->timestamp('last_success_at')->nullable();
+                $table->timestamp('last_failure_at')->nullable();
+                $table->string('last_failure_kind', 32)->nullable();
+                $table->timestamps();
+
+                $table->unique('connected_account_id');
+                $table->index('next_attempt_at');
+            });
+        }
+
+        // life_log_sync_attempts
+        if (!Schema::hasTable('life_log_sync_attempts')) {
+            Schema::create('life_log_sync_attempts', function (Blueprint $table) {
+                $table->bigIncrements('id');
+                $table->uuid('connected_account_id');
+                $table->uuid('user_id');
+                $table->string('external_service', 64);
+                $table->string('trigger', 16);
+                $table->string('outcome', 16);
+                $table->timestamp('range_since');
+                $table->timestamp('range_until');
+                $table->unsignedInteger('pages_fetched')->default(0);
+                $table->unsignedInteger('measurements_written')->default(0);
+                $table->unsignedInteger('sessions_written')->default(0);
+                $table->string('failure_kind', 32)->nullable();
+                $table->text('error_message')->nullable();
+                $table->timestamp('started_at');
+                $table->timestamp('finished_at')->nullable();
+                $table->timestamps();
+
+                $table->index(['connected_account_id', 'started_at']);
+                $table->index('started_at');
+            });
+        }
     }
 
     /**
