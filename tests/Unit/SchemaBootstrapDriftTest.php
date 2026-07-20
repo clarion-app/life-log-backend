@@ -71,6 +71,45 @@ class SchemaBootstrapDriftTest extends TestCase
             'life_log_health_metrics columns drift from migrations'
         );
 
+        // life_log_raw_health_sessions columns from migration 000006
+        $expectedRawSessionColumns = [
+            'id', 'user_id', 'external_service', 'external_id', 'session_type',
+            'started_at', 'ended_at', 'summary_values', 'promoted_at',
+            'created_at', 'updated_at',
+        ];
+        $actualRawSessionColumns = Schema::getColumnListing('life_log_raw_health_sessions');
+        $this->assertEquals(
+            $expectedRawSessionColumns,
+            $actualRawSessionColumns,
+            'life_log_raw_health_sessions columns drift from migration'
+        );
+
+        // life_log_health_sessions columns from migration 000007
+        $expectedSessionColumns = [
+            'id', 'user_id', 'external_service', 'external_id', 'session_type',
+            'started_at', 'ended_at', 'summary_values', 'source',
+            'created_at', 'updated_at', 'deleted_at',
+        ];
+        $actualSessionColumns = Schema::getColumnListing('life_log_health_sessions');
+        $this->assertEquals(
+            $expectedSessionColumns,
+            $actualSessionColumns,
+            'life_log_health_sessions columns drift from migration'
+        );
+
+        // life_log_unmapped_type_records columns from migration 000008
+        $expectedUnmappedColumns = [
+            'id', 'external_service', 'service_type_name', 'sample_value',
+            'sample_unit', 'first_seen_at', 'last_seen_at', 'occurrence_count',
+            'created_at', 'updated_at',
+        ];
+        $actualUnmappedColumns = Schema::getColumnListing('life_log_unmapped_type_records');
+        $this->assertEquals(
+            $expectedUnmappedColumns,
+            $actualUnmappedColumns,
+            'life_log_unmapped_type_records columns drift from migration'
+        );
+
         // data_stream_registries columns (includes deleted_at due to SoftDeletes via EloquentMultiChainBridge)
         $expectedStreamRegColumns = ['id', 'class_name', 'data_stream', 'created_at', 'updated_at', 'deleted_at'];
         $actualStreamRegColumns = Schema::getColumnListing('data_stream_registries');

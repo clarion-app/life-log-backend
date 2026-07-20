@@ -156,6 +156,75 @@ abstract class TestCase extends BaseTestCase
                 $table->unique(['user_id', 'external_service', 'type', 'unit', 'bucket_hour']);
             });
         }
+
+        // life_log_raw_health_sessions
+        if (!Schema::hasTable('life_log_raw_health_sessions')) {
+            Schema::create('life_log_raw_health_sessions', function (Blueprint $table) {
+                $table->bigIncrements('id');
+                $table->uuid('user_id');
+                $table->string('external_service', 64);
+                $table->string('external_id', 191);
+                $table->string('session_type', 64);
+                $table->timestamp('started_at');
+                $table->timestamp('ended_at');
+                $table->json('summary_values');
+                $table->timestamp('promoted_at')->nullable();
+                $table->timestamps();
+
+                $table->unique(['external_service', 'external_id']);
+                $table->index(['user_id', 'started_at']);
+                $table->index('promoted_at');
+            });
+        }
+
+        // life_log_health_sessions (bridged; source has no default by design)
+        if (!Schema::hasTable('life_log_health_sessions')) {
+            Schema::create('life_log_health_sessions', function (Blueprint $table) {
+                $table->uuid('id')->primary();
+                $table->uuid('user_id');
+                $table->string('external_service', 64);
+                $table->string('external_id', 191);
+                $table->string('session_type', 64);
+                $table->timestamp('started_at');
+                $table->timestamp('ended_at');
+                $table->json('summary_values');
+                $table->string('source', 64);
+                $table->timestamps();
+                $table->softDeletes();
+
+                $table->unique(['external_service', 'external_id']);
+                $table->index(['user_id', 'started_at']);
+            });
+        }
+
+        // life_log_unmapped_type_records
+        if (!Schema::hasTable('life_log_unmapped_type_records')) {
+            Schema::create('life_log_unmapped_type_records', function (Blueprint $table) {
+                $table->bigIncrements('id');
+                $table->string('external_service', 64);
+                $table->string('service_type_name', 191);
+                $table->string('sample_value', 64)->nullable();
+                $table->string('sample_unit', 32)->nullable();
+                $table->timestamp('first_seen_at');
+                $table->timestamp('last_seen_at');
+                $table->unsignedBigInteger('occurrence_count')->default(1);
+                $table->timestamps();
+
+                $table->unique(['external_service', 'service_type_name']);
+            });
+        }
+    }
+
+    /**
+     * Project the measurement vocabulary into the classification table.
+     *
+     * Opt-in rather than automatic: tests that exercise the rollup against
+     * deliberately unclassified or free-form types must be able to start from an
+     * empty classification table.
+     */
+    public function syncVocabulary(): void
+    {
+        $this->artisan('life-log:sync-vocabulary');
     }
 
     /**
@@ -173,10 +242,16 @@ abstract class TestCase extends BaseTestCase
         });
         config(['eloquent-multichain-bridge.disabled' => false]);
 
-        // Seed data_stream_registries for HealthMetric so getModelStream() resolves
+        // Seed data_stream_registries for the bridged models so getModelStream() resolves
         DB::table('data_stream_registries')->insertOrIgnore([
-            'class_name' => \ClarionApp\LifeLogBackend\Models\HealthMetric::class,
-            'data_stream' => 'life_log_health_metrics',
+            [
+                'class_name' => \ClarionApp\LifeLogBackend\Models\HealthMetric::class,
+                'data_stream' => 'life_log_health_metrics',
+            ],
+            [
+                'class_name' => \ClarionApp\LifeLogBackend\Models\HealthSession::class,
+                'data_stream' => 'life_log_health_sessions',
+            ],
         ]);
 
         return $spy;

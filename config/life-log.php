@@ -15,6 +15,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Raw Session Retention
+    |--------------------------------------------------------------------------
+    |
+    | The number of days to retain raw health sessions before they are eligible
+    | for cleanup. Set to null to disable automatic retention (keep forever).
+    | Only sessions that have already been promoted are ever pruned.
+    |
+    */
+    'raw_session_retention_days' => env('LIFE_LOG_RAW_SESSION_RETENTION_DAYS', 90),
+
+    /*
+    |--------------------------------------------------------------------------
     | Rollup Batch Size
     |--------------------------------------------------------------------------
     |

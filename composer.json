@@ -15,6 +15,7 @@
     ],
     "minimum-stability": "dev",
     "require": {
+        "ext-bcmath": "*",
         "clarion-app/contacts-backend": "dev-main",
         "clarion-app/eloquent-multichain-bridge": "dev-main",
         "clarion-app/backend": "dev-main"
