@@ -82,6 +82,12 @@ final class FakeSpanService implements ExternalHealthService
         ];
     }
 
+    /** No known window limit — the caller may request any range. */
+    public function maxWindow(\ClarionApp\LifeLogBackend\Vocabulary\MeasurementType|\ClarionApp\LifeLogBackend\Vocabulary\SessionType $type): ?\DateInterval
+    {
+        return null;
+    }
+
     public function beginConnection(string $userId): ConnectionResult
     {
         $this->failIfForced();
@@ -98,6 +104,7 @@ final class FakeSpanService implements ExternalHealthService
         CarbonImmutable $since,
         CarbonImmutable $until,
         ?PageCursor $cursor = null,
+        ?array $types = null,
     ): ResultPage {
         $this->failIfForced();
 
@@ -109,6 +116,11 @@ final class FakeSpanService implements ExternalHealthService
 
         $page = $this->pageIndexFrom($cursor);
         $total = $this->measurementCount + $this->sessionCount;
+
+        // Build type filter set if provided
+        $typeFilter = $types !== null
+            ? array_map(fn ($t) => $t->value, $types)
+            : null;
 
         // A sparse page consumes no items; the data page index therefore skips
         // over every sparse page that came before this one.
@@ -135,6 +147,15 @@ final class FakeSpanService implements ExternalHealthService
 
         foreach ($envelope['data']['items'] as $item) {
             $translated = $this->translate($userId, $item);
+
+            // Apply type filter
+            if ($typeFilter !== null) {
+                $vocabValue = $translated->type->value;
+
+                if (!in_array($vocabValue, $typeFilter, true)) {
+                    continue;
+                }
+            }
 
             if ($translated instanceof TranslatedMeasurement) {
                 $measurements[] = $translated;

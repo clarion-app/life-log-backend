@@ -97,6 +97,12 @@ final class FakeStepService implements ExternalHealthService
         ];
     }
 
+    /** No known window limit — the caller may request any range. */
+    public function maxWindow(\ClarionApp\LifeLogBackend\Vocabulary\MeasurementType|\ClarionApp\LifeLogBackend\Vocabulary\SessionType $type): ?\DateInterval
+    {
+        return null;
+    }
+
     public function beginConnection(string $userId): ConnectionResult
     {
         $this->failIfForced();
@@ -113,6 +119,7 @@ final class FakeStepService implements ExternalHealthService
         CarbonImmutable $since,
         CarbonImmutable $until,
         ?PageCursor $cursor = null,
+        ?array $types = null,
     ): ResultPage {
         $this->failIfForced();
 
@@ -125,9 +132,26 @@ final class FakeStepService implements ExternalHealthService
         $offset = $this->offsetFrom($cursor);
         $inRange = $this->rowsInRange($since, $until);
 
-        $measurements = [];
+        // Build type filter set if provided
+        $typeFilter = $types !== null
+            ? array_map(fn ($t) => $t->value, $types)
+            : null;
 
-        foreach (array_slice($inRange, $offset, $this->pageSize) as $row) {
+        $measurements = [];
+        $filteredRows = $inRange;
+
+        // Apply type filter: map service type names to vocabulary types first
+        if ($typeFilter !== null) {
+            $filteredRows = [];
+            foreach ($inRange as $row) {
+                $vocabType = $this->mapType($row['type']);
+                if ($vocabType !== null && in_array($vocabType->value, $typeFilter, true)) {
+                    $filteredRows[] = $row;
+                }
+            }
+        }
+
+        foreach (array_slice($filteredRows, $offset, $this->pageSize) as $row) {
             $translated = $this->translate($userId, $row);
 
             if ($translated !== null) {
@@ -135,8 +159,8 @@ final class FakeStepService implements ExternalHealthService
             }
         }
 
-        $consumed = min($offset + $this->pageSize, count($inRange));
-        $next = $consumed < count($inRange)
+        $consumed = min($offset + $this->pageSize, count($filteredRows));
+        $next = $consumed < count($filteredRows)
             ? PageCursor::fromArray(['offset' => $consumed, 'generation' => $this->generation])
             : null;
 
@@ -284,5 +308,16 @@ final class FakeStepService implements ExternalHealthService
     private function recorder(): UnmappedTypeRecorder
     {
         return $this->recorder ??= new UnmappedTypeRecorder();
+    }
+
+    /** Map service-specific type name to vocabulary type. */
+    private function mapType(string $serviceTypeName): ?MeasurementType
+    {
+        return match ($serviceTypeName) {
+            'step_count'    => MeasurementType::Steps,
+            'bodyweight'    => MeasurementType::Weight,
+            'walk_distance' => MeasurementType::Distance,
+            default         => null,
+        };
     }
 }

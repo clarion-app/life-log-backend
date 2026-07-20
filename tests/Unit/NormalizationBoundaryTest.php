@@ -160,6 +160,7 @@ class NormalizationBoundaryTest extends TestCase
         $expected = [
             'name' => 'string',
             'supportedTypes' => 'array',
+            'maxWindow' => \DateInterval::class,
             'beginConnection' => ConnectionResult::class,
             'fetch' => ResultPage::class,
             'renewAccess' => RenewalResult::class,

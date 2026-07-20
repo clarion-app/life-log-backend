@@ -32,7 +32,8 @@ class InstanceWideCredentialAccessTest extends TestCase
                 public function beginConnection(string $userId): ConnectionResult {
                     return new ConnectionResult('test-service', 'https://test.example/oauth', 'state');
                 }
-                public function fetch($userId, $since, $until, $cursor = null): ResultPage {
+                public function maxWindow(\ClarionApp\LifeLogBackend\Vocabulary\MeasurementType|\ClarionApp\LifeLogBackend\Vocabulary\SessionType $type): ?\DateInterval { return null; }
+                public function fetch(string $userId, \Carbon\CarbonImmutable $since, \Carbon\CarbonImmutable $until, ?\ClarionApp\LifeLogBackend\External\PageCursor $cursor = null, ?array $types = null): ResultPage {
                     return new ResultPage();
                 }
                 public function renewAccess(string $userId): RenewalResult {

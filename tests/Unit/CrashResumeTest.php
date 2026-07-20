@@ -74,6 +74,10 @@ class CrashResumeTest extends TestCase
         $result1 = $this->makeRunner()->run($account, SyncTrigger::Scheduled);
         $this->assertEquals(SyncOutcome::Failure, $result1->outcome);
 
+        // Clear played cursors for run 2 (simulates fresh sync run - cursor was NOT
+        // consumed in run 1 because the fetch threw before returning the page)
+        $service->clearPlayedCursors();
+
         // Cursor should be persisted from page 1's transaction
         $state = AccountSyncState::where('connected_account_id', $account->id)->first();
         $this->assertNotNull($state);

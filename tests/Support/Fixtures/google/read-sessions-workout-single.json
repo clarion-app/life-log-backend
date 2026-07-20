@@ -1,0 +1,31 @@
+{
+  "_comment": "Fixture: Exercise session - single workout. Stamped v1, captured 2026-07-20.",
+  "_api_version": "v1",
+  "_capture_date": "2026-07-20",
+  "_endpoint": "GET /v1/users/{userId}/dataset:read",
+  "_data_type": "com.google.exercise.session",
+  "_description": "Single workout session spanning 45 minutes.",
+  "dataset": [
+    {
+      "startTimeNanos": "1753028400000000000",
+      "endTimeNanos": "1753031100000000000",
+      "dataSourceId": "derived:com.google.exercise.session:com.google.android.gms:merge_exercise_session",
+      "totalPointCount": 1,
+      "minPointCount": 1,
+      "values": [
+        {
+          "mapVal": {
+            "fieldMap": {
+              "activity_type": {
+                "stringVal": "RUNNING"
+              },
+              "calories": {
+                "fpVal": 320.5
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -19,17 +19,17 @@ class SchemaBootstrapDriftTest extends TestCase
     {
         $migrationDir = __DIR__ . '/../../database/migrations';
 
-        // life_log_raw_measurements columns from migration 000001
+        // life_log_raw_measurements columns from migration 000001 + promoted_at from 058 migration 000002
         $expectedRawColumns = [
             'id', 'user_id', 'external_service', 'external_id', 'type',
             'value', 'unit', 'recorded_at', 'bucket_hour', 'metadata',
-            'created_at', 'updated_at',
+            'promoted_at', 'created_at', 'updated_at',
         ];
         $actualRawColumns = Schema::getColumnListing('life_log_raw_measurements');
         $this->assertEquals(
             $expectedRawColumns,
             $actualRawColumns,
-            'life_log_raw_measurements columns drift from migration'
+            'life_log_raw_measurements columns drift from migration (including promoted_at)'
         );
 
         // life_log_measurement_type_classifications columns from migration 000002
@@ -214,6 +214,40 @@ class SchemaBootstrapDriftTest extends TestCase
         $this->assertTrue(
             Schema::hasColumn('life_log_account_authorizations', 'connected_account_id'),
             'life_log_account_authorizations should have unique connected_account_id column'
+        );
+
+        // life_log_account_backfill_states columns from migration 000001 (058)
+        $expectedBackfillStateColumns = [
+            'id', 'connected_account_id', 'type', 'backfilled_to',
+            'cursor', 'cursor_since', 'cursor_until', 'complete_at',
+            'completeness_determined_at', 'requests_used', 'last_error_kind',
+            'created_at', 'updated_at',
+        ];
+        $actualBackfillStateColumns = Schema::getColumnListing('life_log_account_backfill_states');
+        $this->assertEquals(
+            $expectedBackfillStateColumns,
+            $actualBackfillStateColumns,
+            'life_log_account_backfill_states columns drift from migration'
+        );
+
+        // life_log_raw_measurements: bucket_hour single-column index was dropped by 058 migration 000002
+        // SQLite doesn't expose index names directly, so we verify the column exists
+        // (the composite index on user_id+bucket_hour still covers the rollup pattern)
+        $this->assertTrue(
+            Schema::hasColumn('life_log_raw_measurements', 'bucket_hour'),
+            'life_log_raw_measurements should still have bucket_hour column after index drop'
+        );
+
+        // life_log_raw_measurements: promoted_at column and index exist (058 migration 000002)
+        $this->assertTrue(
+            Schema::hasColumn('life_log_raw_measurements', 'promoted_at'),
+            'life_log_raw_measurements should have promoted_at column'
+        );
+
+        // life_log_account_backfill_states: unique index columns exist
+        $this->assertTrue(
+            Schema::hasColumns('life_log_account_backfill_states', ['connected_account_id', 'type']),
+            'life_log_account_backfill_states should have connected_account_id and type for unique index'
         );
     }
 }

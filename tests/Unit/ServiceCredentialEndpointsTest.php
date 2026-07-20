@@ -44,7 +44,8 @@ class ServiceCredentialEndpointsTest extends TestCase
                 public function beginConnection(string $userId): ConnectionResult {
                     return new ConnectionResult('test-service', 'https://test.example/oauth', 'state');
                 }
-                public function fetch($userId, $since, $until, $cursor = null): ResultPage {
+                public function maxWindow(\ClarionApp\LifeLogBackend\Vocabulary\MeasurementType|\ClarionApp\LifeLogBackend\Vocabulary\SessionType $type): ?\DateInterval { return null; }
+                public function fetch(string $userId, \Carbon\CarbonImmutable $since, \Carbon\CarbonImmutable $until, ?\ClarionApp\LifeLogBackend\External\PageCursor $cursor = null, ?array $types = null): ResultPage {
                     return new ResultPage();
                 }
                 public function renewAccess(string $userId): RenewalResult {
@@ -274,7 +275,8 @@ class ServiceCredentialEndpointsTest extends TestCase
                 public function beginConnection(string $userId): ConnectionResult {
                     return new ConnectionResult('another-service', 'https://test.example/oauth', 'state');
                 }
-                public function fetch($userId, $since, $until, $cursor = null): ResultPage {
+                public function maxWindow(\ClarionApp\LifeLogBackend\Vocabulary\MeasurementType|\ClarionApp\LifeLogBackend\Vocabulary\SessionType $type): ?\DateInterval { return null; }
+                public function fetch(string $userId, \Carbon\CarbonImmutable $since, \Carbon\CarbonImmutable $until, ?\ClarionApp\LifeLogBackend\External\PageCursor $cursor = null, ?array $types = null): ResultPage {
                     return new ResultPage();
                 }
                 public function renewAccess(string $userId): RenewalResult {
@@ -295,11 +297,13 @@ class ServiceCredentialEndpointsTest extends TestCase
         $response->assertJsonStructure(['services']);
 
         $services = $response->json('services');
-        $this->assertCount(2, $services);
+        // google-health is registered by LifeLogBackendServiceProvider + 2 test services
+        $this->assertCount(3, $services);
 
         // Find each service
         $testService = collect($services)->firstWhere('external_service', 'test-service');
         $anotherService = collect($services)->firstWhere('external_service', 'another-service');
+        $googleService = collect($services)->firstWhere('external_service', 'google-health');
 
         $this->assertTrue($testService['configured']);
         $this->assertSame('test-client-id', $testService['client_id']);

@@ -91,10 +91,11 @@ class CredentialSecretExposureTest extends TestCase
             return new class implements ExternalHealthService {
                 public function name(): string { return 'test-service'; }
                 public function supportedTypes(): array { return []; }
+                public function maxWindow(\ClarionApp\LifeLogBackend\Vocabulary\MeasurementType|\ClarionApp\LifeLogBackend\Vocabulary\SessionType $type): ?\DateInterval { return null; }
                 public function beginConnection(string $userId): ConnectionResult {
                     return new ConnectionResult('test-service', 'https://test.example/oauth', 'state');
                 }
-                public function fetch($userId, $since, $until, $cursor = null): ResultPage {
+                public function fetch(string $userId, \Carbon\CarbonImmutable $since, \Carbon\CarbonImmutable $until, ?\ClarionApp\LifeLogBackend\External\PageCursor $cursor = null, ?array $types = null): ResultPage {
                     return new ResultPage();
                 }
                 public function renewAccess(string $userId): RenewalResult {
@@ -144,7 +145,8 @@ class CredentialSecretExposureTest extends TestCase
                 public function beginConnection(string $userId): ConnectionResult {
                     return new ConnectionResult('test-service', 'https://test.example/oauth', 'state');
                 }
-                public function fetch($userId, $since, $until, $cursor = null): ResultPage {
+                public function maxWindow(\ClarionApp\LifeLogBackend\Vocabulary\MeasurementType|\ClarionApp\LifeLogBackend\Vocabulary\SessionType $type): ?\DateInterval { return null; }
+                public function fetch(string $userId, \Carbon\CarbonImmutable $since, \Carbon\CarbonImmutable $until, ?\ClarionApp\LifeLogBackend\External\PageCursor $cursor = null, ?array $types = null): ResultPage {
                     return new ResultPage();
                 }
                 public function renewAccess(string $userId): RenewalResult {
@@ -187,7 +189,8 @@ class CredentialSecretExposureTest extends TestCase
                 public function beginConnection(string $userId): ConnectionResult {
                     return new ConnectionResult('test-service', 'https://test.example/oauth', 'state');
                 }
-                public function fetch($userId, $since, $until, $cursor = null): ResultPage {
+                public function maxWindow(\ClarionApp\LifeLogBackend\Vocabulary\MeasurementType|\ClarionApp\LifeLogBackend\Vocabulary\SessionType $type): ?\DateInterval { return null; }
+                public function fetch(string $userId, \Carbon\CarbonImmutable $since, \Carbon\CarbonImmutable $until, ?\ClarionApp\LifeLogBackend\External\PageCursor $cursor = null, ?array $types = null): ResultPage {
                     return new ResultPage();
                 }
                 public function renewAccess(string $userId): RenewalResult {
@@ -225,10 +228,11 @@ class CredentialSecretExposureTest extends TestCase
             return new class implements ExternalHealthService {
                 public function name(): string { return 'test-service'; }
                 public function supportedTypes(): array { return []; }
+                public function maxWindow(\ClarionApp\LifeLogBackend\Vocabulary\MeasurementType|\ClarionApp\LifeLogBackend\Vocabulary\SessionType $type): ?\DateInterval { return null; }
                 public function beginConnection(string $userId): ConnectionResult {
                     return new ConnectionResult('test-service', 'https://test.example/oauth', 'state');
                 }
-                public function fetch($userId, $since, $until, $cursor = null): ResultPage {
+                public function fetch(string $userId, \Carbon\CarbonImmutable $since, \Carbon\CarbonImmutable $until, ?\ClarionApp\LifeLogBackend\External\PageCursor $cursor = null, ?array $types = null): ResultPage {
                     return new ResultPage();
                 }
                 public function renewAccess(string $userId): RenewalResult {
@@ -264,10 +268,11 @@ class CredentialSecretExposureTest extends TestCase
             return new class implements ExternalHealthService {
                 public function name(): string { return 'test-service'; }
                 public function supportedTypes(): array { return []; }
+                public function maxWindow(\ClarionApp\LifeLogBackend\Vocabulary\MeasurementType|\ClarionApp\LifeLogBackend\Vocabulary\SessionType $type): ?\DateInterval { return null; }
                 public function beginConnection(string $userId): ConnectionResult {
                     return new ConnectionResult('test-service', 'https://test.example/oauth', 'state');
                 }
-                public function fetch($userId, $since, $until, $cursor = null): ResultPage {
+                public function fetch(string $userId, \Carbon\CarbonImmutable $since, \Carbon\CarbonImmutable $until, ?\ClarionApp\LifeLogBackend\External\PageCursor $cursor = null, ?array $types = null): ResultPage {
                     return new ResultPage();
                 }
                 public function renewAccess(string $userId): RenewalResult {
@@ -303,10 +308,11 @@ class CredentialSecretExposureTest extends TestCase
             return new class implements ExternalHealthService {
                 public function name(): string { return 'test-service'; }
                 public function supportedTypes(): array { return []; }
+                public function maxWindow(\ClarionApp\LifeLogBackend\Vocabulary\MeasurementType|\ClarionApp\LifeLogBackend\Vocabulary\SessionType $type): ?\DateInterval { return null; }
                 public function beginConnection(string $userId): ConnectionResult {
                     return new ConnectionResult('test-service', 'https://test.example/oauth', 'state');
                 }
-                public function fetch($userId, $since, $until, $cursor = null): ResultPage {
+                public function fetch(string $userId, \Carbon\CarbonImmutable $since, \Carbon\CarbonImmutable $until, ?\ClarionApp\LifeLogBackend\External\PageCursor $cursor = null, ?array $types = null): ResultPage {
                     return new ResultPage();
                 }
                 public function renewAccess(string $userId): RenewalResult {
@@ -341,10 +347,11 @@ class CredentialSecretExposureTest extends TestCase
         $service = new class implements ExternalHealthService {
             public function name(): string { return 'test-service'; }
             public function supportedTypes(): array { return []; }
+            public function maxWindow(\ClarionApp\LifeLogBackend\Vocabulary\MeasurementType|\ClarionApp\LifeLogBackend\Vocabulary\SessionType $type): ?\DateInterval { return null; }
             public function beginConnection(string $userId): ConnectionResult {
                 return new ConnectionResult('test-service', 'https://test.example/oauth', 'state');
             }
-            public function fetch($userId, $since, $until, $cursor = null): ResultPage {
+            public function fetch(string $userId, \Carbon\CarbonImmutable $since, \Carbon\CarbonImmutable $until, ?\ClarionApp\LifeLogBackend\External\PageCursor $cursor = null, ?array $types = null): ResultPage {
                 throw new \RuntimeException('Internal error');
             }
             public function renewAccess(string $userId): RenewalResult {

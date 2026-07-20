@@ -8,10 +8,14 @@ return [
     |--------------------------------------------------------------------------
     |
     | The number of days to retain raw measurements before they are eligible
-    | for cleanup. Set to null to disable automatic retention (keep forever).
+    | for cleanup. Defaults to null (keep forever).
+    |
+    | WARNING: A 90-day default silently deletes a five-year backfill ninety
+    | days after it lands. Set LIFE_LOG_RAW_RETENTION_DAYS via env var only
+    | if you explicitly want pruning.
     |
     */
-    'raw_retention_days' => env('LIFE_LOG_RAW_RETENTION_DAYS', 90),
+    'raw_retention_days' => env('LIFE_LOG_RAW_RETENTION_DAYS', null),
 
     /*
     |--------------------------------------------------------------------------
@@ -19,11 +23,15 @@ return [
     |--------------------------------------------------------------------------
     |
     | The number of days to retain raw health sessions before they are eligible
-    | for cleanup. Set to null to disable automatic retention (keep forever).
+    | for cleanup. Defaults to null (keep forever).
     | Only sessions that have already been promoted are ever pruned.
     |
+    | WARNING: A 90-day default silently deletes a five-year backfill ninety
+    | days after it lands. Set LIFE_LOG_RAW_SESSION_RETENTION_DAYS via env var
+    | only if you explicitly want pruning.
+    |
     */
-    'raw_session_retention_days' => env('LIFE_LOG_RAW_SESSION_RETENTION_DAYS', 90),
+    'raw_session_retention_days' => env('LIFE_LOG_RAW_SESSION_RETENTION_DAYS', null),
 
     /*
     |--------------------------------------------------------------------------
@@ -108,6 +116,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Account Backfill: Jitter Seconds
+    |--------------------------------------------------------------------------
+    |
+    | Maximum jitter (in seconds) applied to backfill job dispatch delays
+    | from the sweep command. Separate from sync jitter so the two cadences
+    | don't thunder together.
+    |
+    */
+    'backfill_jitter_seconds' => (int) env('LIFE_LOG_BACKFILL_JITTER_SECONDS', 600),
+
+    /*
+    |--------------------------------------------------------------------------
     | Account Sync: Lock Seconds
     |--------------------------------------------------------------------------
     |
@@ -151,5 +171,36 @@ return [
     |
     */
     'token_refresh_wait_seconds' => (int) env('LIFE_LOG_TOKEN_REFRESH_WAIT_SECONDS', 10),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Request Budget
+    |--------------------------------------------------------------------------
+    |
+    | Two-lane budget manager that guards against quota exhaustion.
+    |
+    | - per_minute: maximum requests per calendar minute (any lane)
+    | - per_day: maximum requests per calendar day (any lane)
+    | - incremental_reserve: bytes reserved in the daily lane for incremental
+    |   syncs; backfill cannot consume this reserve
+    | - max_requests_per_backfill_run: hard cap on fetch calls per backfill
+    |   run to prevent runaway consumption
+    |
+    | Cache keys use the configured Laravel cache store:
+    |   life-log:budget:{service}:min:{YmdHi}  (TTL: 120s)
+    |   life-log:budget:{service}:day:{Ymd}    (TTL: 48h)
+    |
+    | WARNING: The file cache driver does not support atomic increment.
+    |          Budget enforcement requires a cache driver that does
+    |          (database, redis, memcached). File cache will silently
+    |          skip enforcement.
+    |
+    */
+    'budget' => [
+        'per_minute' => (int) env('LIFE_LOG_BUDGET_PER_MINUTE', 100000),
+        'per_day' => (int) env('LIFE_LOG_BUDGET_PER_DAY', 80000000),
+        'incremental_reserve' => (int) env('LIFE_LOG_BUDGET_INCREMENTAL_RESERVE', 5000),
+        'max_requests_per_backfill_run' => (int) env('LIFE_LOG_BUDGET_MAX_REQUESTS_PER_BACKFILL_RUN', 500),
+    ],
 
 ];

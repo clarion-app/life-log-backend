@@ -42,6 +42,16 @@ class RawMeasurement extends Model
     }
 
     /**
+     * The promotion scan: one indexed predicate, no join, no timestamp
+     * comparison. A measurement is pending exactly when it has never been
+     * promoted or has been rewritten since.
+     */
+    public function scopePendingPromotion(Builder $query): Builder
+    {
+        return $query->whereNull('promoted_at');
+    }
+
+    /**
      * FR-006 time-range retrieval scope.
      * Rides the (user_id, bucket_hour) index.
      */

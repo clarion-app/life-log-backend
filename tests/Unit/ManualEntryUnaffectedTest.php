@@ -6,6 +6,7 @@ use Tests\TestCase;
 use ClarionApp\Backend\Models\User;
 use ClarionApp\LifeLogBackend\Models\HealthMetric;
 use ClarionApp\LifeLogBackend\Models\MeasurementTypeClassification;
+use ClarionApp\LifeLogBackend\Services\DirectMeasurementPromoter;
 use ClarionApp\LifeLogBackend\Services\HourlyMeasurementRollup;
 use ClarionApp\LifeLogBackend\Services\RawMeasurementWriter;
 use ClarionApp\LifeLogBackend\Vocabulary\MeasurementType;
@@ -228,6 +229,7 @@ class ManualEntryUnaffectedTest extends TestCase
         ]]);
 
         (new HourlyMeasurementRollup())->run();
+        (new DirectMeasurementPromoter())->run();
 
         // One series: both rows answer the same query on the same type name.
         $series = HealthMetric::where('user_id', $this->userId)

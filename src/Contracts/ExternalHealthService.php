@@ -40,6 +40,12 @@ use Carbon\CarbonImmutable;
  *     rotation for the life of the worker process — the service keeps presenting a
  *     secret the operator has already replaced, and the failure appears only after a
  *     rotation, only in a long-lived worker, and never in a single-request test.
+ *  8. Do not silently split a range wider than maxWindow(). If the caller requests
+ *     a window wider than the declared maximum, reject with FailureKind::InvalidRequest.
+ *     The caller (WindowPlanner) is responsible for splitting.
+ *  9. Return only the types requested in the $types filter. A null filter means
+ *     "all supported types" (backwards compatible); a non-null filter restricts
+ *     results to the listed types only.
  */
 interface ExternalHealthService
 {
@@ -61,6 +67,21 @@ interface ExternalHealthService
     public function supportedTypes(): array;
 
     /**
+     * Maximum window the provider will serve in a single request, per type.
+     *
+     * Returns null if the provider has no known limit (the caller may request
+     * any range). Returns a DateInterval if the provider caps the window — the
+     * caller MUST NOT request a range wider than this; it must split instead.
+     *
+     * A service that returns null for a type it supports signals "no limit
+     * known" — the caller still checks for provider-side errors and retries
+     * with a narrower range if the request fails.
+     *
+     * @param  MeasurementType|SessionType  $type
+     */
+    public function maxWindow(MeasurementType|SessionType $type): ?\DateInterval;
+
+    /**
      * Behavior 1 — begin connecting an account.
      *
      * Stores nothing; persistence of the resulting connection belongs to a later
@@ -75,6 +96,11 @@ interface ExternalHealthService
      * position. The returned page's nextCursor() is null only at true
      * exhaustion — an empty page with a cursor means a sparse span, keep going.
      *
+     * The $types filter restricts results to the listed types. A null filter
+     * returns all supported types (backwards compatible with pre-058 callers).
+     *
+     * @param  list<MeasurementType|SessionType>|null  $types  Types to filter by; null for all.
+     *
      * @throws HealthServiceFailure InvalidRequest when $until < $since, or when the
      *                              cursor is no longer honored. Never silently
      *                              restarts the range: that would re-deliver
@@ -85,6 +111,7 @@ interface ExternalHealthService
         CarbonImmutable $since,
         CarbonImmutable $until,
         ?PageCursor $cursor = null,
+        ?array $types = null,
     ): ResultPage;
 
     /**

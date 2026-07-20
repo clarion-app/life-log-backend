@@ -1,0 +1,9 @@
+{
+  "_comment": "Fixture: Empty measurements page with nextPageToken (sparse span). Stamped v1, captured 2026-07-20.",
+  "_api_version": "v1",
+  "_capture_date": "2026-07-20",
+  "_endpoint": "GET /v1/users/{userId}/data/heart_rate_bpm:read",
+  "_description": "Empty page with nextPageToken - represents a period where device was not worn. The sync engine must continue paging, not stop.",
+  "dataset": [],
+  "nextPageToken": "CjkKEwi2x7mBgaKjBhVYmaYKHQlQRRoTCPCfh"
+}

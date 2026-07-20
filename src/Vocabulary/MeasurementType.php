@@ -63,4 +63,27 @@ enum MeasurementType: string
             self::Weight         => MeasurementTypeClassification::AGGREGATION_POINT_IN_TIME,
         };
     }
+
+    /**
+     * How this type reaches the permanent side (T020).
+     *
+     * Rollup types flow through the hourly aggregation pipeline: raw readings
+     * are bucketed, summed (or averaged), and the rollup row is what gets
+     * replicated. Direct types skip the pipeline — the raw value is permanent.
+     *
+     * The partition is total and disjoint; a seventh type without a mapping
+     * fails the partition test before it can cause a silent replication gap.
+     */
+    public function replicationMode(): ReplicationMode
+    {
+        return match ($this) {
+            self::Steps,
+            self::CaloriesBurned,
+            self::Distance,
+            self::ActiveMinutes => ReplicationMode::Rollup,
+
+            self::HeartRate,
+            self::Weight        => ReplicationMode::Direct,
+        };
+    }
 }

@@ -5,6 +5,8 @@ namespace ClarionApp\LifeLogBackend\Services;
 use ClarionApp\LifeLogBackend\Models\RawMeasurement;
 use ClarionApp\LifeLogBackend\Models\MeasurementRollupQueue;
 use ClarionApp\LifeLogBackend\Support\MeasurementBucket;
+use ClarionApp\LifeLogBackend\Vocabulary\MeasurementType;
+use ClarionApp\LifeLogBackend\Vocabulary\ReplicationMode;
 use Carbon\CarbonImmutable;
 
 class RawMeasurementWriter
@@ -56,15 +58,20 @@ class RawMeasurementWriter
                 'metadata' => isset($reading['metadata']) ? json_encode($reading['metadata']) : null,
             ];
 
-            // Track dirty bucket for queue marking
-            $bucketKey = $reading['user_id'] . '|' . $reading['external_service'] . '|' . $reading['type'] . '|' . $unit . '|' . $bucketHour;
-            $dirtyBuckets[$bucketKey] = [
-                'user_id' => $reading['user_id'],
-                'external_service' => $reading['external_service'],
-                'type' => $reading['type'],
-                'unit' => $unit,
-                'bucket_hour' => $bucketHour,
-            ];
+            // Track dirty bucket for queue marking — only Rollup-mode types
+            // need the rollup queue. Direct-mode types bypass rollup entirely
+            // and are promoted one-for-one by DirectMeasurementPromoter.
+            $replicationMode = $this->getReplicationMode($reading['type']);
+            if ($replicationMode === ReplicationMode::Rollup) {
+                $bucketKey = $reading['user_id'] . '|' . $reading['external_service'] . '|' . $reading['type'] . '|' . $unit . '|' . $bucketHour;
+                $dirtyBuckets[$bucketKey] = [
+                    'user_id' => $reading['user_id'],
+                    'external_service' => $reading['external_service'],
+                    'type' => $reading['type'],
+                    'unit' => $unit,
+                    'bucket_hour' => $bucketHour,
+                ];
+            }
         }
 
         // Bulk upsert — bypasses events, no bridge overhead (research.md §4)
@@ -102,5 +109,25 @@ class RawMeasurementWriter
     {
         $iso8601 = is_string($recordedAtUtc) ? $recordedAtUtc : $recordedAtUtc->toISOString();
         return 'derived:' . hash('sha256', implode('|', [$userId, $service, $type, $iso8601]));
+    }
+
+    /**
+     * Get the replication mode for a measurement type.
+     *
+     * Known types (in the vocabulary) return their declared mode.
+     * Unknown types default to Rollup — they will be deferred by the rollup
+     * as unclassified until someone adds them to the vocabulary.
+     *
+     * @return ReplicationMode
+     */
+    public function getReplicationMode(string $type): ReplicationMode
+    {
+        try {
+            return MeasurementType::from($type)->replicationMode();
+        } catch (\ValueError) {
+            // Unknown type defaults to Rollup — the rollup will defer it
+            // as unclassified. Direct is opt-in via the vocabulary enum.
+            return ReplicationMode::Rollup;
+        }
     }
 }

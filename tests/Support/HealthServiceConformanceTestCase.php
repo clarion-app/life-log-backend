@@ -580,4 +580,130 @@ abstract class HealthServiceConformanceTestCase extends TestCase
 
         return false;
     }
+
+    // --------------------------------------------------- T014: contract conformance additions
+
+    /**
+     * @test  every supported type has a declared max window (may be null = no limit)
+     *
+     * The contract requires maxWindow() to be callable for every type the
+     * service claims. A null return means "no known limit"; a DateInterval
+     * means "split any wider range before calling."
+     */
+    public function maxWindowDeclared(): void
+    {
+        $service = $this->service();
+
+        foreach ($service->supportedTypes() as $type) {
+            $maxWindow = $service->maxWindow($type);
+
+            $this->assertTrue(
+                $maxWindow === null || $maxWindow instanceof \DateInterval,
+                "maxWindow({$type->value}) must return ?DateInterval, got " . get_debug_type($maxWindow),
+            );
+        }
+    }
+
+    /**
+     * @test  null type filter returns all supported types
+     *
+     * When types is omitted or null, the service returns everything it has.
+     * This is the default behavior and must not filter.
+     */
+    public function nullTypeFilterReturnsAll(): void
+    {
+        $service = $this->service();
+        $page = $service->fetch(self::USER, $this->since(), $this->until());
+
+        // Collect all types present
+        $typesFound = [];
+
+        foreach ($page->measurements() as $m) {
+            $typesFound[$m->type->value] = true;
+        }
+
+        foreach ($page->sessions() as $s) {
+            $typesFound[$s->type->value] = true;
+        }
+
+        // Re-fetch with explicit null — must return the same types
+        $pageNull = $service->fetch(self::USER, $this->since(), $this->until(), null, null);
+        $typesNull = [];
+
+        foreach ($pageNull->measurements() as $m) {
+            $typesNull[$m->type->value] = true;
+        }
+
+        foreach ($pageNull->sessions() as $s) {
+            $typesNull[$s->type->value] = true;
+        }
+
+        $this->assertSame(
+            array_keys($typesFound),
+            array_keys($typesNull),
+            'Null type filter must return the same types as no filter.',
+        );
+    }
+
+    /**
+     * @test  type filter restricts output to requested types only
+     *
+     * When types is provided, the service returns only items matching those types.
+     * This is obligation 9 from the contract.
+     */
+    public function typeFilterRestricts(): void
+    {
+        $service = $this->service();
+        $supported = $service->supportedTypes();
+
+        if (count($supported) < 2) {
+            // Need at least two types to test filtering
+            $this->markTestSkipped('Service supports fewer than 2 types; filtering cannot be meaningfully tested.');
+        }
+
+        $filterType = $supported[0];
+        $page = $service->fetch(
+            self::USER,
+            $this->since(),
+            $this->until(),
+            null,
+            [$filterType],
+        );
+
+        foreach ($page->measurements() as $m) {
+            $this->assertSame(
+                $filterType,
+                $m->type,
+                "Measurement type {$m->type->value} is not in the filter set.",
+            );
+        }
+
+        foreach ($page->sessions() as $s) {
+            $this->assertSame(
+                $filterType,
+                $s->type,
+                "Session type {$s->type->value} is not in the filter set.",
+            );
+        }
+    }
+
+    /**
+     * @test  empty type filter returns nothing
+     *
+     * An empty array for types is legal and must return an empty page.
+     */
+    public function emptyTypeFilterReturnsNothing(): void
+    {
+        $service = $this->service();
+        $page = $service->fetch(
+            self::USER,
+            $this->since(),
+            $this->until(),
+            null,
+            [],
+        );
+
+        $this->assertEmpty($page->measurements());
+        $this->assertEmpty($page->sessions());
+    }
 }

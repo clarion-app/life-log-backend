@@ -11,6 +11,8 @@ use ClarionApp\LifeLogBackend\External\DisconnectResult;
 use ClarionApp\LifeLogBackend\External\PageCursor;
 use ClarionApp\LifeLogBackend\External\RenewalResult;
 use ClarionApp\LifeLogBackend\External\ResultPage;
+use ClarionApp\LifeLogBackend\Vocabulary\MeasurementType;
+use ClarionApp\LifeLogBackend\Vocabulary\SessionType;
 use Carbon\CarbonImmutable;
 
 /**
@@ -42,13 +44,25 @@ final class ScriptedSyncService implements ExternalHealthService
     /** Current fetch call count (1-indexed). */
     private int $fetchCallCount = 0;
 
-    /** Current page index being emitted. */
+    /** Current page index being emitted (unfiltered legacy path). */
     private int $currentPageIndex = 0;
 
+    /** Per-type page indices, keyed by comma-separated type values (e.g. 'steps'). */
+    private array $typePageIndices = [];
+
     /**
-     * @var list<array{since: string, until: string, cursor: ?string}>
+     * @var list<array{since: string, until: string, cursor: ?string, types: ?list<string>}>
      */
     public array $fetchCalls = [];
+
+    /** Per-type max window limits, or null to allow any range. */
+    private ?array $maxWindows = null;
+
+    /** Cursors that have already been played — replay throws InvalidRequest. */
+    private array $playedCursors = [];
+
+    /** @var list<MeasurementType|SessionType> Supported types (empty = all types). Defaults to [Steps] for predictable test behavior. */
+    private array $supportedTypes = [MeasurementType::Steps];
 
     /** @var list<string> userIds passed to renewAccess */
     public array $renewCalls = [];
@@ -70,6 +84,40 @@ final class ScriptedSyncService implements ExternalHealthService
     public static function emitting(array $pages): self
     {
         return new self($pages);
+    }
+
+    /**
+     * Set per-type max window limits.
+     *
+     * @param  array<MeasurementType|SessionType, DateInterval|null>  $maxWindows
+     */
+    public function setMaxWindows(array $maxWindows): self
+    {
+        $this->maxWindows = $maxWindows;
+        return $this;
+    }
+
+    /**
+     * Set max window for a single type (convenience method).
+     */
+    public function setMaxWindow(MeasurementType|SessionType $type, \DateInterval|string $interval): self
+    {
+        if (is_string($interval)) {
+            $interval = new \DateInterval($interval);
+        }
+        $this->maxWindows[$type->value] = $interval;
+        return $this;
+    }
+
+    /**
+     * Set supported types for this service.
+     *
+     * @param  list<MeasurementType|SessionType>  $types
+     */
+    public function setSupportedTypes(array $types): self
+    {
+        $this->supportedTypes = $types;
+        return $this;
     }
 
     /**
@@ -213,6 +261,18 @@ final class ScriptedSyncService implements ExternalHealthService
     {
         $this->pages = $pages;
         $this->currentPageIndex = 0;
+        $this->typePageIndices = [];
+        $this->playedCursors = [];
+        return $this;
+    }
+
+    /**
+     * Clear the played cursors list (for crash-resume scenarios where the
+     * same cursor is reused after a failure).
+     */
+    public function clearPlayedCursors(): self
+    {
+        $this->playedCursors = [];
         return $this;
     }
 
@@ -223,7 +283,18 @@ final class ScriptedSyncService implements ExternalHealthService
 
     public function supportedTypes(): array
     {
-        return [];
+        return $this->supportedTypes;
+    }
+
+    /**
+     * Return the max window for the given type, or null if no limit.
+     */
+    public function maxWindow(\ClarionApp\LifeLogBackend\Vocabulary\MeasurementType|\ClarionApp\LifeLogBackend\Vocabulary\SessionType $type): ?\DateInterval
+    {
+        if ($this->maxWindows === null) {
+            return null;
+        }
+        return $this->maxWindows[$type->value] ?? null;
     }
 
     public function beginConnection(string $userId): ConnectionResult
@@ -247,6 +318,7 @@ final class ScriptedSyncService implements ExternalHealthService
         CarbonImmutable $since,
         CarbonImmutable $until,
         ?PageCursor $cursor = null,
+        ?array $types = null,
     ): ResultPage {
         $this->fetchCallCount++;
 
@@ -254,7 +326,27 @@ final class ScriptedSyncService implements ExternalHealthService
             'since' => $since->toISOString(),
             'until' => $until->toISOString(),
             'cursor' => $cursor?->toString(),
+            'types' => $types !== null
+                ? array_map(fn ($t) => $t->value, $types)
+                : null,
         ];
+
+        // Reject cursor replay — the service does not accept cursors from a
+        // different type set (obligation 10 from the contract).
+        if ($cursor !== null) {
+            $cursorKey = $cursor->toString();
+            $typeKey = $types !== null
+                ? implode(',', array_map(fn ($t) => $t->value, $types))
+                : 'null';
+            $replayKey = $cursorKey . ':' . $typeKey;
+
+            if (in_array($replayKey, $this->playedCursors, true)) {
+                throw HealthServiceFailure::invalidRequest(
+                    'cursor already consumed for this type set'
+                );
+            }
+            $this->playedCursors[] = $replayKey;
+        }
 
         // Throw on the Nth call
         if ($this->throwOnFetch !== null && $this->fetchCallCount === $this->throwOnFetch) {
@@ -266,21 +358,54 @@ final class ScriptedSyncService implements ExternalHealthService
             throw $failure;
         }
 
-        if ($this->currentPageIndex >= count($this->pages)) {
+        // Derive type key for per-type page tracking
+        $typeKey = $types !== null
+            ? implode(',', array_map(fn ($t) => $t->value, $types))
+            : '__unfiltered__';
+
+        // Use per-type page index (each type filter gets its own page sequence)
+        if (!isset($this->typePageIndices[$typeKey])) {
+            $this->typePageIndices[$typeKey] = 0;
+        }
+        $pageIndex = $this->typePageIndices[$typeKey];
+
+        if ($pageIndex >= count($this->pages)) {
             // Exhausted — return empty page with no cursor
             return new ResultPage();
         }
 
-        $page = $this->pages[$this->currentPageIndex];
-        $this->currentPageIndex++;
+        $page = $this->pages[$pageIndex];
+        $this->typePageIndices[$typeKey]++;
+
+        // Also advance the global index for backwards compatibility
+        $this->currentPageIndex = max($this->currentPageIndex, $this->typePageIndices[$typeKey]);
 
         // If abortAfterPage is set and we just emitted that page, return a page
         // with no cursor (simulating the service not giving us a next cursor)
-        if ($this->abortAfterPage !== null && ($this->currentPageIndex - 1) === $this->abortAfterPage) {
+        if ($this->abortAfterPage !== null && ($this->typePageIndices[$typeKey] - 1) === $this->abortAfterPage) {
             return new ResultPage(
                 $page->measurements(),
                 $page->sessions(),
                 null,
+            );
+        }
+
+        // Apply type filter if provided
+        if ($types !== null) {
+            $typeFilter = array_map(fn ($t) => $t->value, $types);
+            $filteredMeasurements = array_filter(
+                $page->measurements(),
+                fn ($m) => in_array($m->type->value, $typeFilter, true)
+            );
+            $filteredSessions = array_filter(
+                $page->sessions(),
+                fn ($s) => in_array($s->type->value, $typeFilter, true)
+            );
+
+            return new ResultPage(
+                array_values($filteredMeasurements),
+                array_values($filteredSessions),
+                $page->nextCursor(),
             );
         }
 

@@ -3,9 +3,12 @@
 namespace ClarionApp\LifeLogBackend\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use ClarionApp\EloquentMultiChainBridge\EloquentMultiChainBridge;
+use ClarionApp\LifeLogBackend\Vocabulary\MeasurementType;
+use ClarionApp\LifeLogBackend\Vocabulary\SessionType;
 
 class ConnectedAccount extends Model
 {
@@ -83,5 +86,25 @@ class ConnectedAccount extends Model
         return $state?->needs_attention_reason
             ?? $state?->last_failure_kind
             ?? 'unknown';
+    }
+
+    /**
+     * All backfill states for this account (one per type).
+     */
+    public function backfillStates(): HasMany
+    {
+        return $this->hasMany(AccountBackfillState::class, 'connected_account_id', 'id');
+    }
+
+    /**
+     * The backfill state for a specific type, or null if not yet tracked.
+     *
+     * @param  MeasurementType|SessionType  $type
+     */
+    public function backfillState(MeasurementType|SessionType $type): ?AccountBackfillState
+    {
+        return $this->backfillStates()
+            ->where('type', $type->value)
+            ->first();
     }
 }

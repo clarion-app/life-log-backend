@@ -10,6 +10,8 @@ use ClarionApp\LifeLogBackend\Models\AccountSyncState;
 use ClarionApp\LifeLogBackend\Models\ConnectedAccount;
 use ClarionApp\LifeLogBackend\Services\RawMeasurementWriter;
 use ClarionApp\LifeLogBackend\Services\RawSessionWriter;
+use ClarionApp\LifeLogBackend\Vocabulary\MeasurementType;
+use ClarionApp\LifeLogBackend\Vocabulary\SessionType;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -30,6 +32,10 @@ final class AccountSyncRunner
 
     private ServiceCredentialProvider $credentials;
 
+    private WindowPlanner $planner;
+
+    private RequestBudget $budget;
+
     public function __construct(
         private HealthServiceRegistry $registry,
         private RawMeasurementWriter $measurements,
@@ -40,6 +46,8 @@ final class AccountSyncRunner
         private int $maxPages = 0,
         ?TokenRefreshCoordinator $tokenRefresh = null,
         ?ServiceCredentialProvider $credentials = null,
+        ?WindowPlanner $planner = null,
+        ?RequestBudget $budget = null,
     ) {
         if ($this->maxPages <= 0) {
             $this->maxPages = (int) config('life-log.sync_max_pages_per_run', 200);
@@ -52,6 +60,8 @@ final class AccountSyncRunner
         // back to resolving them here.
         $this->tokenRefresh = $tokenRefresh ?? app(TokenRefreshCoordinator::class);
         $this->credentials = $credentials ?? app(ServiceCredentialProvider::class);
+        $this->planner = $planner ?? app(WindowPlanner::class);
+        $this->budget = $budget ?? app(RequestBudget::class);
     }
 
     /**
@@ -92,6 +102,10 @@ final class AccountSyncRunner
 
     /**
      * Execute the sync (called inside the lock callback).
+     *
+     * Plans the window into per-type segments via WindowPlanner, iterates
+     * segments, passes the type filter to fetch(), and takes reserveIncremental(1)
+     * per fetch. The existing single-renewal retry sits inside the per-segment loop.
      */
     private function execute(
         ConnectedAccount $account,
@@ -123,123 +137,43 @@ final class AccountSyncRunner
         // Resolve the service from the registry
         $service = $this->registry->resolve($account->external_service);
 
+        // Use supportedTypes from the service; fall back to ALL types for
+        // pre-058 services that return an empty array (backwards compatible).
+        $types = $service->supportedTypes();
+        if (empty($types)) {
+            $types = array_merge(
+                MeasurementType::cases(),
+                SessionType::cases(),
+            );
+        }
+
+        // Plan the window into per-type segments
+        $segments = $this->planner->plan(
+            $window->since,
+            $window->until,
+            $service,
+            $types,
+        );
+
+        // No segments to process
+        if (empty($segments)) {
+            return new SyncResult(
+                outcome: SyncOutcome::Skipped,
+                since: $window->since,
+                until: $window->until,
+                startedAt: $startedAt,
+                finishedAt: CarbonImmutable::now(),
+            );
+        }
+
         $pages = 0;
         $totalMeasurements = 0;
         $totalSessions = 0;
-        $cursor = $state->cursor;
 
         try {
-            // Page loop
-            while (true) {
-                $page = null;
-                $renewalAttempted = false;
-
-                // Fetch with optional renewal retry for AccessExpired
-                while (true) {
-                    try {
-                        $page = $service->fetch(
-                            $account->user_id,
-                            $window->since,
-                            $window->until,
-                            $cursor !== null ? \ClarionApp\LifeLogBackend\External\PageCursor::fromString($cursor) : null,
-                        );
-                        break; // Success — exit retry loop
-                    } catch (HealthServiceFailure $failure) {
-                        // Check if this is AccessExpired and we haven't tried renewal yet
-                        if ($failure->kind === FailureKind::AccessExpired && !$renewalAttempted) {
-                            $renewalAttempted = true;
-                            // Routed through the coordinator (not called directly) so a
-                            // concurrent sync/user-triggered refresh for this account
-                            // never race the same provider call (research §9).
-                            $renewalResult = $this->tokenRefresh->renew($account, $service);
-
-                            if ($renewalResult->renewed) {
-                                // Retry the same page immediately — nothing counted
-                                continue;
-                            }
-
-                            // Declined renewal — the grant can no longer be renewed.
-                            // Routed through the same policy branch as a direct
-                            // AccessRevoked failure so both paths agree on
-                            // needs_attention_reason (FR-017).
-                            $response = $this->policy->apply(
-                                $state,
-                                HealthServiceFailure::accessRevoked('Access renewal declined'),
-                                CarbonImmutable::now(),
-                            );
-                            $this->applyFailureResponse(
-                                $state,
-                                $account,
-                                $response,
-                                FailureKind::AccessRevoked,
-                                CarbonImmutable::now(),
-                            );
-
-                            return new SyncResult(
-                                outcome: SyncOutcome::Failure,
-                                since: $window->since,
-                                until: $window->until,
-                                pagesFetched: $pages,
-                                measurementsWritten: $totalMeasurements,
-                                sessionsWritten: $totalSessions,
-                                failureKind: FailureKind::AccessRevoked,
-                                errorMessage: 'Access renewal declined',
-                                startedAt: $startedAt,
-                                finishedAt: CarbonImmutable::now(),
-                            );
-                        }
-
-                        // Not AccessExpired or renewal already attempted — propagate to outer handler
-                        throw $failure;
-                    }
-                }
-
-                // Transactional write: measurements + sessions + cursor save
-                DB::transaction(function () use ($page, $state, $window, &$totalMeasurements, &$totalSessions) {
-                    $measRows = array_map(fn ($m) => $m->toRawMeasurementRow(), $page->measurements());
-                    $sessRows = array_map(fn ($s) => $s->toRawSessionRow(), $page->sessions());
-                    $measCount = $this->measurements->write($measRows);
-                    $sessCount = $this->sessions->write($sessRows);
-                    $totalMeasurements += $measCount;
-                    $totalSessions += $sessCount;
-
-                    // Save cursor triple atomically with the page data
-                    $nextCursor = $page->nextCursor();
-                    $state->cursor = $nextCursor?->toString();
-
-                    // When cursor is non-null, save the window it was issued against
-                    if ($nextCursor !== null) {
-                        $state->cursor_since = $window->since;
-                        $state->cursor_until = $window->until;
-                    } else {
-                        // Exhaustion — clear cursor triple
-                        $state->cursor_since = null;
-                        $state->cursor_until = null;
-                    }
-
-                    $state->save();
-                });
-
-                $pages++;
-
-                // Exhaustion: nextCursor() === null
-                if ($page->nextCursor() === null) {
-                    // Finalize
-                    $this->finalize($account, $state, $window, CarbonImmutable::now());
-
-                    return new SyncResult(
-                        outcome: SyncOutcome::Success,
-                        since: $window->since,
-                        until: $window->until,
-                        pagesFetched: $pages,
-                        measurementsWritten: $totalMeasurements,
-                        sessionsWritten: $totalSessions,
-                        startedAt: $startedAt,
-                        finishedAt: CarbonImmutable::now(),
-                    );
-                }
-
-                // Page cap → partial (cursor is kept, checkpoint held)
+            // Iterate over segments
+            foreach ($segments as $segment) {
+                // Check page cap before starting a segment
                 if ($pages >= $this->maxPages) {
                     return new SyncResult(
                         outcome: SyncOutcome::Partial,
@@ -253,9 +187,158 @@ final class AccountSyncRunner
                     );
                 }
 
-                // Update cursor for next iteration
-                $cursor = $state->cursor;
+                // Reserve budget for this fetch
+                if (!$this->budget->reserveIncremental($account->external_service, 1)) {
+                    // Budget denied — return partial (cursor kept, checkpoint held)
+                    return new SyncResult(
+                        outcome: SyncOutcome::Partial,
+                        since: $window->since,
+                        until: $window->until,
+                        pagesFetched: $pages,
+                        measurementsWritten: $totalMeasurements,
+                        sessionsWritten: $totalSessions,
+                        startedAt: $startedAt,
+                        finishedAt: CarbonImmutable::now(),
+                    );
+                }
+
+                // Page loop for this segment
+                $cursor = $state->cursor !== null
+                    ? \ClarionApp\LifeLogBackend\External\PageCursor::fromString($state->cursor)
+                    : null;
+
+                while (true) {
+                    $page = null;
+                    $renewalAttempted = false;
+
+                    // Fetch with optional renewal retry for AccessExpired
+                    while (true) {
+                        try {
+                            $page = $service->fetch(
+                                $account->user_id,
+                                $segment->since,
+                                $segment->until,
+                                $cursor,
+                                [$segment->type],
+                            );
+                            break; // Success — exit retry loop
+                        } catch (HealthServiceFailure $failure) {
+                            // Check if this is AccessExpired and we haven't tried renewal yet
+                            if ($failure->kind === FailureKind::AccessExpired && !$renewalAttempted) {
+                                $renewalAttempted = true;
+                                // Routed through the coordinator (not called directly) so a
+                                // concurrent sync/user-triggered refresh for this account
+                                // never race the same provider call (research §9).
+                                $renewalResult = $this->tokenRefresh->renew($account, $service);
+
+                                if ($renewalResult->renewed) {
+                                    // Retry the same page immediately — nothing counted
+                                    continue;
+                                }
+
+                                // Declined renewal — the grant can no longer be renewed.
+                                // Routed through the same policy branch as a direct
+                                // AccessRevoked failure so both paths agree on
+                                // needs_attention_reason (FR-017).
+                                $response = $this->policy->apply(
+                                    $state,
+                                    HealthServiceFailure::accessRevoked('Access renewal declined'),
+                                    CarbonImmutable::now(),
+                                );
+                                $this->applyFailureResponse(
+                                    $state,
+                                    $account,
+                                    $response,
+                                    FailureKind::AccessRevoked,
+                                    CarbonImmutable::now(),
+                                );
+
+                                return new SyncResult(
+                                    outcome: SyncOutcome::Failure,
+                                    since: $window->since,
+                                    until: $window->until,
+                                    pagesFetched: $pages,
+                                    measurementsWritten: $totalMeasurements,
+                                    sessionsWritten: $totalSessions,
+                                    failureKind: FailureKind::AccessRevoked,
+                                    errorMessage: 'Access renewal declined',
+                                    startedAt: $startedAt,
+                                    finishedAt: CarbonImmutable::now(),
+                                );
+                            }
+
+                            // Not AccessExpired or renewal already attempted — propagate to outer handler
+                            throw $failure;
+                        }
+                    }
+
+                    // Transactional write: measurements + sessions + cursor save
+                    DB::transaction(function () use ($page, $state, $segment, &$totalMeasurements, &$totalSessions) {
+                        $measRows = array_map(fn ($m) => $m->toRawMeasurementRow(), $page->measurements());
+                        $sessRows = array_map(fn ($s) => $s->toRawSessionRow(), $page->sessions());
+                        $measCount = $this->measurements->write($measRows);
+                        $sessCount = $this->sessions->write($sessRows);
+                        $totalMeasurements += $measCount;
+                        $totalSessions += $sessCount;
+
+                        // Save cursor triple atomically with the page data
+                        $nextCursor = $page->nextCursor();
+                        $state->cursor = $nextCursor?->toString();
+
+                        // When cursor is non-null, save the window it was issued against
+                        if ($nextCursor !== null) {
+                            $state->cursor_since = $segment->since;
+                            $state->cursor_until = $segment->until;
+                        } else {
+                            // Exhaustion — clear cursor triple
+                            $state->cursor_since = null;
+                            $state->cursor_until = null;
+                        }
+
+                        $state->save();
+                    });
+
+                    $pages++;
+
+                    // Exhaustion: nextCursor() === null — move to next segment
+                    if ($page->nextCursor() === null) {
+                        break;
+                    }
+
+                    // Page cap → partial (cursor is kept, checkpoint held)
+                    if ($pages >= $this->maxPages) {
+                        return new SyncResult(
+                            outcome: SyncOutcome::Partial,
+                            since: $window->since,
+                            until: $window->until,
+                            pagesFetched: $pages,
+                            measurementsWritten: $totalMeasurements,
+                            sessionsWritten: $totalSessions,
+                            startedAt: $startedAt,
+                            finishedAt: CarbonImmutable::now(),
+                        );
+                    }
+
+                    // Update cursor for next iteration
+                    $cursor = $state->cursor !== null
+                        ? \ClarionApp\LifeLogBackend\External\PageCursor::fromString($state->cursor)
+                        : null;
+                }
             }
+
+            // All segments processed — finalize
+            $this->finalize($account, $state, $window, CarbonImmutable::now());
+
+            return new SyncResult(
+                outcome: SyncOutcome::Success,
+                since: $window->since,
+                until: $window->until,
+                pagesFetched: $pages,
+                measurementsWritten: $totalMeasurements,
+                sessionsWritten: $totalSessions,
+                startedAt: $startedAt,
+                finishedAt: CarbonImmutable::now(),
+            );
         } catch (HealthServiceFailure $failure) {
             // Route to FailurePolicy
             $response = $this->policy->apply($state, $failure, CarbonImmutable::now());

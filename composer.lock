@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "66450f22ddb7eee3fb046c98be416161",
+    "content-hash": "7a46659d4e733162d4b6617af3fdd8ae",
     "packages": [
         {
             "name": "brick/math",
@@ -1225,7 +1225,6 @@
                 "ext-intl": "Required for Internationalized Domain Name (IDN) support",
                 "psr/log": "Required for using the Log middleware"
             },
-            "default-branch": true,
             "type": "library",
             "extra": {
                 "bamarni-bin": {
@@ -10567,7 +10566,9 @@
     },
     "prefer-stable": false,
     "prefer-lowest": false,
-    "platform": {},
+    "platform": {
+        "ext-bcmath": "*"
+    },
     "platform-dev": {},
     "plugin-api-version": "2.6.0"
 }

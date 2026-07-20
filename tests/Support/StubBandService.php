@@ -45,6 +45,12 @@ final class StubBandService implements ExternalHealthService
         return [MeasurementType::HeartRate];
     }
 
+    /** No known window limit — the caller may request any range. */
+    public function maxWindow(\ClarionApp\LifeLogBackend\Vocabulary\MeasurementType|\ClarionApp\LifeLogBackend\Vocabulary\SessionType $type): ?\DateInterval
+    {
+        return null;
+    }
+
     public function beginConnection(string $userId): ConnectionResult
     {
         $state = 'band-' . bin2hex(random_bytes(32));
@@ -60,6 +66,7 @@ final class StubBandService implements ExternalHealthService
         CarbonImmutable $since,
         CarbonImmutable $until,
         ?PageCursor $cursor = null,
+        ?array $types = null,
     ): ResultPage {
         if ($until->lessThan($since)) {
             throw HealthServiceFailure::invalidRequest('band: the window ends before it begins');
@@ -71,10 +78,15 @@ final class StubBandService implements ExternalHealthService
             throw HealthServiceFailure::invalidRequest('band: no cursor was ever issued');
         }
 
+        // Build type filter set if provided
+        $typeFilter = $types !== null
+            ? array_map(fn ($t) => $t->value, $types)
+            : null;
+
         $measurements = [];
 
         foreach ([['band-1', '62'], ['band-2', '71']] as [$id, $bpm]) {
-            $measurements[] = new TranslatedMeasurement(
+            $translated = new TranslatedMeasurement(
                 userId: $userId,
                 type: MeasurementType::HeartRate,
                 value: $this->converter->toCanonical($bpm, 'bpm', MeasurementType::HeartRate),
@@ -83,6 +95,13 @@ final class StubBandService implements ExternalHealthService
                 externalId: $id,
                 externalService: self::NAME,
             );
+
+            // Apply type filter
+            if ($typeFilter !== null && !in_array(MeasurementType::HeartRate->value, $typeFilter, true)) {
+                continue;
+            }
+
+            $measurements[] = $translated;
         }
 
         return new ResultPage($measurements, [], null);
