@@ -7,7 +7,6 @@ use ClarionApp\LifeLogBackend\Models\ConnectedAccount;
 use ClarionApp\LifeLogBackend\Sync\SyncTrigger;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Queue;
 
 class SyncAccountsCommand extends Command
 {
@@ -39,9 +38,10 @@ class SyncAccountsCommand extends Command
                     // Deterministic jitter: crc32(account_id) % jitter_seconds
                     $delay = abs(crc32($account->id)) % $jitterSeconds;
 
-                    $job = new SyncConnectedAccountJob($account->id, SyncTrigger::Scheduled);
-                    $job->delay = $delay;
-                    Queue::push($job);
+                    // dispatch(), not Queue::push() — push() ignores the job's
+                    // delay and bypasses ShouldBeUnique.
+                    SyncConnectedAccountJob::dispatch($account->id, SyncTrigger::Scheduled)
+                        ->delay($delay);
 
                     $dispatched++;
                 }

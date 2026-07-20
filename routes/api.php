@@ -13,6 +13,6 @@ Route::group(['prefix'=>$this->routePrefix, 'middleware' => [StartSession::class
     Route::resource('health-metric', HealthMetricController::class);
 
     // Connected account sync endpoints
-    Route::post('life-log/connected-accounts/{id}/sync', [ConnectedAccountController::class, 'sync']);
-    Route::get('life-log/connected-accounts/{id}', [ConnectedAccountController::class, 'show']);
+    Route::post('connected-accounts/{id}/sync', [ConnectedAccountController::class, 'sync']);
+    Route::get('connected-accounts/{id}', [ConnectedAccountController::class, 'show']);
 });

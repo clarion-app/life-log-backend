@@ -142,6 +142,60 @@ class BackoffProgressionTest extends TestCase
         CarbonImmutable::setTestNow();
     }
 
+    /**
+     * The state row records which kind of failure it was — the GET sync-health
+     * endpoint reads last_failure_kind, so a null here is a silent hole in the
+     * only diagnostic a caller has (data-model.md, quickstart "Diagnosing an account").
+     */
+    public function testFailureKindIsPersistedOnTheStateRow(): void
+    {
+        $now = CarbonImmutable::now();
+        CarbonImmutable::setTestNow($now);
+
+        $account = $this->makeAccount('failure-kind-user', $now->subDays(5));
+
+        $service = ScriptedSyncService::withPages([
+            ['measurements' => 1, 'sessions' => 0],
+        ]);
+        $service->throwServiceUnavailableOn(1);
+
+        $this->makeRunnerWithService($service)->run($account, SyncTrigger::Scheduled);
+
+        $state = AccountSyncState::where('connected_account_id', $account->id)->first();
+        $this->assertSame('service_unavailable', $state->last_failure_kind);
+        $this->assertEquals($now->getTimestamp(), $state->last_failure_at->getTimestamp());
+
+        CarbonImmutable::setTestNow();
+    }
+
+    /**
+     * AccessRevoked is terminal: the kind is recorded and no ladder gate is
+     * left behind for the sweep to wait on (failure-policy.md).
+     */
+    public function testAccessRevokedRecordsKindAndLeavesNoGate(): void
+    {
+        $now = CarbonImmutable::now();
+        CarbonImmutable::setTestNow($now);
+
+        $account = $this->makeAccount('revoked-kind-user', $now->subDays(5));
+
+        $service = ScriptedSyncService::withPages([
+            ['measurements' => 1, 'sessions' => 0],
+        ]);
+        $service->throwAccessRevokedOn(1);
+
+        $this->makeRunnerWithService($service)->run($account, SyncTrigger::Scheduled);
+
+        $state = AccountSyncState::where('connected_account_id', $account->id)->first();
+        $this->assertSame('access_revoked', $state->last_failure_kind);
+        $this->assertNull($state->next_attempt_at);
+
+        $account->refresh();
+        $this->assertEquals('needs_attention', $account->sync_state);
+
+        CarbonImmutable::setTestNow();
+    }
+
     public function testFlaggedAccountExcludedFromSweep(): void
     {
         $connectedAt = CarbonImmutable::now()->subDays(5);

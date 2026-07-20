@@ -140,7 +140,12 @@ final class AccountSyncRunner
                             }
 
                             // Declined renewal — treat as AccessRevoked (flag now, no ladder)
-                            $this->applyAccessRevoked($state, $account, CarbonImmutable::now());
+                            $this->applyAccessRevoked(
+                                $state,
+                                $account,
+                                CarbonImmutable::now(),
+                                \ClarionApp\LifeLogBackend\Contracts\FailureKind::AccessRevoked,
+                            );
 
                             return new SyncResult(
                                 outcome: SyncOutcome::Failure,
@@ -228,7 +233,7 @@ final class AccountSyncRunner
             $response = $this->policy->apply($state, $failure, CarbonImmutable::now());
 
             // Apply the failure response to the state
-            $this->applyFailureResponse($state, $account, $response, CarbonImmutable::now());
+            $this->applyFailureResponse($state, $account, $response, $failure->kind, CarbonImmutable::now());
 
             return new SyncResult(
                 outcome: SyncOutcome::Failure,
@@ -270,11 +275,15 @@ final class AccountSyncRunner
         AccountSyncState $state,
         ConnectedAccount $account,
         CarbonImmutable $now,
+        \ClarionApp\LifeLogBackend\Contracts\FailureKind $kind,
     ): void {
         // Clear cursor triple
         $state->cursor = null;
         $state->cursor_since = null;
         $state->cursor_until = null;
+        $state->next_attempt_at = null;   // terminal — no ladder
+        $state->last_failure_at = $now;
+        $state->last_failure_kind = $kind->value;
         $state->save();
 
         // Flag the account
@@ -293,6 +302,7 @@ final class AccountSyncRunner
         AccountSyncState $state,
         ConnectedAccount $account,
         FailureResponse $response,
+        \ClarionApp\LifeLogBackend\Contracts\FailureKind $kind,
         CarbonImmutable $now,
     ): void {
         if ($response->clearsCursor) {
@@ -305,8 +315,14 @@ final class AccountSyncRunner
             $state->consecutive_failures = ($state->consecutive_failures ?? 0) + 1;
         }
 
-        $state->next_attempt_at = $response->nextAttemptAt;
+        // A renewal response carries no ladder rung — leave any existing gate
+        // untouched rather than clearing it (failure-policy.md, AccessExpired row).
+        if (! $response->attemptsRenewal) {
+            $state->next_attempt_at = $response->nextAttemptAt;
+        }
+
         $state->last_failure_at = $now;
+        $state->last_failure_kind = $kind->value;
         $state->save();
 
         if ($response->flagsImmediately) {

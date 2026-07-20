@@ -127,6 +127,6 @@ return [
     | for pruning. Set to null to disable automatic retention.
     |
     */
-    'sync_attempt_retention_days' => (int) env('LIFE_LOG_SYNC_ATTEMPT_RETENTION_DAYS', 30),
+    'sync_attempt_retention_days' => env('LIFE_LOG_SYNC_ATTEMPT_RETENTION_DAYS', 30),
 
 ];
