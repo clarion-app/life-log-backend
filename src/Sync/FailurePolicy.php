@@ -3,6 +3,7 @@
 namespace ClarionApp\LifeLogBackend\Sync;
 
 use ClarionApp\LifeLogBackend\Contracts\FailureKind;
+use ClarionApp\LifeLogBackend\Credentials\ServiceCredentialProvider;
 use ClarionApp\LifeLogBackend\Exceptions\HealthServiceFailure;
 use ClarionApp\LifeLogBackend\Models\AccountSyncState;
 use Carbon\CarbonImmutable;
@@ -17,6 +18,11 @@ use Illuminate\Support\Facades\Log;
  */
 class FailurePolicy
 {
+    public function __construct(
+        private ServiceCredentialProvider $credentials,
+    ) {
+    }
+
     /**
      * Apply the policy to a failure.
      *
@@ -124,13 +130,16 @@ class FailurePolicy
 
     private function accessRevoked(): FailureResponse
     {
-        // Terminal: flag immediately, clear cursor, no ladder
+        // Terminal: flag immediately, clear cursor, no ladder. The grant can
+        // no longer be renewed — retrying is futile, so this skips the
+        // ladder the same way a stale credential version does (FR-017).
         return new FailureResponse(
             countsAsFailure: false,
             flagsImmediately: true,
             clearsCursor: true,
             attemptsRenewal: false,
             nextAttemptAt: null,
+            needsAttentionReason: NeedsAttentionReason::AuthorizationUnrenewable,
         );
     }
 
@@ -140,6 +149,22 @@ class FailurePolicy
         int $ladderMinutes,
         int $maxFailures,
     ): FailureResponse {
+        // A rejection under a credential_version older than the service's
+        // current one is not an ordinary failure — the secret was rotated
+        // out from under this connection. Burning the backoff ladder here
+        // would take ~13 hours to surface something a version comparison
+        // already knows on the first attempt (research §10).
+        if ($this->isStaleCredentialVersion($state)) {
+            return new FailureResponse(
+                countsAsFailure: false,
+                flagsImmediately: true,
+                clearsCursor: false,
+                attemptsRenewal: false,
+                nextAttemptAt: null,
+                needsAttentionReason: NeedsAttentionReason::CredentialRotated,
+            );
+        }
+
         $countsAsFailure = true;
         $flagsImmediately = ($state->consecutive_failures + 1) >= $maxFailures;
 
@@ -150,6 +175,38 @@ class FailurePolicy
             attemptsRenewal: false,
             nextAttemptAt: $now->addMinutes($ladderMinutes),
         );
+    }
+
+    /**
+     * Whether this account's authorization was granted under a credential
+     * version older than the service's current one.
+     *
+     * Fetches the credential through ServiceCredentialProvider on every
+     * call rather than caching it on $this — the same obligation 7 rule
+     * implementers of ExternalHealthService follow, for the same reason:
+     * this object can outlive a single credential rotation.
+     */
+    private function isStaleCredentialVersion(AccountSyncState $state): bool
+    {
+        $account = $state->connectedAccount;
+
+        if ($account === null) {
+            return false;
+        }
+
+        $authorization = $account->authorization;
+
+        if ($authorization === null) {
+            return false;
+        }
+
+        $credential = $this->credentials->find($account->external_service);
+
+        if ($credential === null) {
+            return false;
+        }
+
+        return $authorization->credential_version < $credential->version;
     }
 
     private function invalidRequest(

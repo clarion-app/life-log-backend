@@ -26,4 +26,5 @@ Route::group(['prefix'=>$this->routePrefix, 'middleware' => [StartSession::class
     Route::post('connected-accounts/callback', [ConnectedAccountController::class, 'callback']);
     Route::post('connected-accounts/{id}/sync', [ConnectedAccountController::class, 'sync']);
     Route::get('connected-accounts/{id}', [ConnectedAccountController::class, 'show']);
+    Route::delete('connected-accounts/{id}', [ConnectedAccountController::class, 'destroy']);
 });

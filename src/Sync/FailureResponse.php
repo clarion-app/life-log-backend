@@ -18,6 +18,11 @@ final readonly class FailureResponse
         public bool $clearsCursor,        // discard cursor + stored window
         public bool $attemptsRenewal,     // call renewAccess() once, in-run
         public ?CarbonImmutable $nextAttemptAt,
+        // Set only for the two ladder-skipping branches (stale credential
+        // version, unrenewable grant). Null means "no management-side
+        // reason" — the runner leaves needs_attention_reason null and the
+        // connection's public reason falls back to last_failure_kind.
+        public ?NeedsAttentionReason $needsAttentionReason = null,
     ) {
     }
 }

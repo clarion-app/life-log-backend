@@ -44,8 +44,14 @@ final class ConnectionCompleter
             // Get the current credential (for version stamping)
             $credential = $this->credentialProvider->require($externalService);
 
-            // Upsert the ConnectedAccount
-            $account = ConnectedAccount::query()
+            // Upsert the ConnectedAccount. withTrashed() matters here: a
+            // service the user previously disconnected leaves a soft-deleted
+            // row behind (it is bridged — a tombstone, not a hard delete),
+            // and the (user_id, external_service) unique index does not
+            // exempt soft-deleted rows. Reconnecting the same service after
+            // a disconnect must restore that row rather than insert a
+            // second one, or the insert fails the unique constraint.
+            $account = ConnectedAccount::withTrashed()
                 ->where('user_id', $userId)
                 ->where('external_service', $externalService)
                 ->first();
@@ -53,6 +59,10 @@ final class ConnectionCompleter
             $reconnected = $account !== null;
 
             if ($account) {
+                if ($account->trashed()) {
+                    $account->restore();
+                }
+
                 // Update existing account
                 $account->sync_state = 'normal';
                 $account->save();

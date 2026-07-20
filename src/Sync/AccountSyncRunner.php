@@ -2,6 +2,8 @@
 
 namespace ClarionApp\LifeLogBackend\Sync;
 
+use ClarionApp\LifeLogBackend\Contracts\FailureKind;
+use ClarionApp\LifeLogBackend\Credentials\ServiceCredentialProvider;
 use ClarionApp\LifeLogBackend\External\HealthServiceRegistry;
 use ClarionApp\LifeLogBackend\Exceptions\HealthServiceFailure;
 use ClarionApp\LifeLogBackend\Models\AccountSyncState;
@@ -24,6 +26,10 @@ use Illuminate\Support\Facades\Event;
  */
 final class AccountSyncRunner
 {
+    private TokenRefreshCoordinator $tokenRefresh;
+
+    private ServiceCredentialProvider $credentials;
+
     public function __construct(
         private HealthServiceRegistry $registry,
         private RawMeasurementWriter $measurements,
@@ -32,10 +38,20 @@ final class AccountSyncRunner
         private SyncLock $locks,
         private SyncAttemptRecorder $recorder,
         private int $maxPages = 0,
+        ?TokenRefreshCoordinator $tokenRefresh = null,
+        ?ServiceCredentialProvider $credentials = null,
     ) {
         if ($this->maxPages <= 0) {
             $this->maxPages = (int) config('life-log.sync_max_pages_per_run', 200);
         }
+
+        // Optional constructor args (rather than required, promoted ones) so
+        // every existing call site that predates token refresh and credential
+        // rotation keeps working unchanged. Container resolution still wires
+        // real instances in; only a bare `new AccountSyncRunner(...)` falls
+        // back to resolving them here.
+        $this->tokenRefresh = $tokenRefresh ?? app(TokenRefreshCoordinator::class);
+        $this->credentials = $credentials ?? app(ServiceCredentialProvider::class);
     }
 
     /**
@@ -130,21 +146,33 @@ final class AccountSyncRunner
                         break; // Success — exit retry loop
                     } catch (HealthServiceFailure $failure) {
                         // Check if this is AccessExpired and we haven't tried renewal yet
-                        if ($failure->kind === \ClarionApp\LifeLogBackend\Contracts\FailureKind::AccessExpired && !$renewalAttempted) {
+                        if ($failure->kind === FailureKind::AccessExpired && !$renewalAttempted) {
                             $renewalAttempted = true;
-                            $renewalResult = $service->renewAccess($account->user_id);
+                            // Routed through the coordinator (not called directly) so a
+                            // concurrent sync/user-triggered refresh for this account
+                            // never race the same provider call (research §9).
+                            $renewalResult = $this->tokenRefresh->renew($account, $service);
 
-                            if ($renewalResult->success) {
+                            if ($renewalResult->renewed) {
                                 // Retry the same page immediately — nothing counted
                                 continue;
                             }
 
-                            // Declined renewal — treat as AccessRevoked (flag now, no ladder)
-                            $this->applyAccessRevoked(
+                            // Declined renewal — the grant can no longer be renewed.
+                            // Routed through the same policy branch as a direct
+                            // AccessRevoked failure so both paths agree on
+                            // needs_attention_reason (FR-017).
+                            $response = $this->policy->apply(
+                                $state,
+                                HealthServiceFailure::accessRevoked('Access renewal declined'),
+                                CarbonImmutable::now(),
+                            );
+                            $this->applyFailureResponse(
                                 $state,
                                 $account,
+                                $response,
+                                FailureKind::AccessRevoked,
                                 CarbonImmutable::now(),
-                                \ClarionApp\LifeLogBackend\Contracts\FailureKind::AccessRevoked,
                             );
 
                             return new SyncResult(
@@ -154,7 +182,7 @@ final class AccountSyncRunner
                                 pagesFetched: $pages,
                                 measurementsWritten: $totalMeasurements,
                                 sessionsWritten: $totalSessions,
-                                failureKind: \ClarionApp\LifeLogBackend\Contracts\FailureKind::AccessRevoked,
+                                failureKind: FailureKind::AccessRevoked,
                                 errorMessage: 'Access renewal declined',
                                 startedAt: $startedAt,
                                 finishedAt: CarbonImmutable::now(),
@@ -197,7 +225,7 @@ final class AccountSyncRunner
                 // Exhaustion: nextCursor() === null
                 if ($page->nextCursor() === null) {
                     // Finalize
-                    $this->finalize($state, $window, CarbonImmutable::now());
+                    $this->finalize($account, $state, $window, CarbonImmutable::now());
 
                     return new SyncResult(
                         outcome: SyncOutcome::Success,
@@ -256,7 +284,7 @@ final class AccountSyncRunner
      * Checkpoint = run-start until; cursor triple nulled; counter zeroed;
      * gate cleared; last_success_at stamped.
      */
-    private function finalize(AccountSyncState $state, SyncWindow $window, CarbonImmutable $now): void
+    private function finalize(ConnectedAccount $account, AccountSyncState $state, SyncWindow $window, CarbonImmutable $now): void
     {
         $state->synced_through_at = $window->until;
         $state->cursor = null;
@@ -266,32 +294,27 @@ final class AccountSyncRunner
         $state->next_attempt_at = null;
         $state->last_success_at = $now;
         $state->save();
+
+        $this->refreshCredentialVersion($account);
     }
 
     /**
-     * Apply AccessRevoked handling (used by declined renewal path).
+     * Stamp the authorization's credential_version to current on a
+     * successful sync (research §10) — silent, no user-visible event.
      */
-    private function applyAccessRevoked(
-        AccountSyncState $state,
-        ConnectedAccount $account,
-        CarbonImmutable $now,
-        \ClarionApp\LifeLogBackend\Contracts\FailureKind $kind,
-    ): void {
-        // Clear cursor triple
-        $state->cursor = null;
-        $state->cursor_since = null;
-        $state->cursor_until = null;
-        $state->next_attempt_at = null;   // terminal — no ladder
-        $state->last_failure_at = $now;
-        $state->last_failure_kind = $kind->value;
-        $state->save();
+    private function refreshCredentialVersion(ConnectedAccount $account): void
+    {
+        $credential = $this->credentials->find($account->external_service);
 
-        // Flag the account
-        if ($account->sync_state !== 'needs_attention') {
-            $account->sync_state = 'needs_attention';
-            $account->save();
+        if ($credential === null) {
+            return;
+        }
 
-            Event::dispatch(new \ClarionApp\LifeLogBackend\Events\ConnectedAccountNeedsAttention($account));
+        $authorization = $account->authorization;
+
+        if ($authorization !== null && $authorization->credential_version !== $credential->version) {
+            $authorization->credential_version = $credential->version;
+            $authorization->save();
         }
     }
 
@@ -302,7 +325,7 @@ final class AccountSyncRunner
         AccountSyncState $state,
         ConnectedAccount $account,
         FailureResponse $response,
-        \ClarionApp\LifeLogBackend\Contracts\FailureKind $kind,
+        FailureKind $kind,
         CarbonImmutable $now,
     ): void {
         if ($response->clearsCursor) {
@@ -323,6 +346,10 @@ final class AccountSyncRunner
 
         $state->last_failure_at = $now;
         $state->last_failure_kind = $kind->value;
+        // The management-side reason, distinct from last_failure_kind (data-model.md
+        // §AccountSyncState). Null on every ordinary ladder branch, so the public
+        // reason keeps falling back to last_failure_kind exactly as before.
+        $state->needs_attention_reason = $response->needsAttentionReason?->value;
         $state->save();
 
         if ($response->flagsImmediately) {

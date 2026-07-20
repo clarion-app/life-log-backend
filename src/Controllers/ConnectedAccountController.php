@@ -2,6 +2,7 @@
 
 namespace ClarionApp\LifeLogBackend\Controllers;
 
+use ClarionApp\LifeLogBackend\Connection\AccountDisconnector;
 use ClarionApp\LifeLogBackend\Connection\ConnectionAttemptFactory;
 use ClarionApp\LifeLogBackend\Connection\ConnectionAttemptVerifier;
 use ClarionApp\LifeLogBackend\Connection\ConnectionCompleter;
@@ -26,6 +27,7 @@ class ConnectedAccountController extends Controller
         private ConnectionCompleter $connectionCompleter,
         private ServiceCredentialProvider $credentialProvider,
         private HealthServiceRegistry $serviceRegistry,
+        private AccountDisconnector $disconnector,
     ) {
     }
 
@@ -297,5 +299,38 @@ class ConnectedAccountController extends Controller
             'status' => 'healthy',
             'reconnected' => $result['reconnected'],
         ], 201);
+    }
+
+    /**
+     * Disconnect a connected account.
+     *
+     * Asks the provider to revoke access on a best-effort basis, then
+     * unconditionally tears down what was stored locally — the
+     * authorization, the sync bookkeeping, and the connection itself
+     * (FR-021, FR-022). Health data already ingested is never touched
+     * (FR-023). A connection the caller does not own returns 404.
+     *
+     * DELETE /connected-accounts/{id}
+     *
+     * 200 { "disconnected": true, "revocation_confirmed": false }
+     */
+    public function destroy(string $id): JsonResponse
+    {
+        $account = $this->ownedAccount($id);
+
+        if (! $account) {
+            return $this->notFound();
+        }
+
+        $service = $this->serviceRegistry->has($account->external_service)
+            ? $this->serviceRegistry->resolve($account->external_service)
+            : null;
+
+        $result = $this->disconnector->disconnect($account, $service);
+
+        return response()->json([
+            'disconnected' => $result->disconnected,
+            'revocation_confirmed' => $result->remoteReachable,
+        ], 200);
     }
 }

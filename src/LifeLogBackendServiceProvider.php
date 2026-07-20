@@ -12,6 +12,7 @@ use ClarionApp\LifeLogBackend\Commands\RollupMeasurementsCommand;
 use ClarionApp\LifeLogBackend\Commands\SyncAccountCommand;
 use ClarionApp\LifeLogBackend\Commands\SyncAccountsCommand;
 use ClarionApp\LifeLogBackend\Commands\SyncVocabularyClassificationsCommand;
+use ClarionApp\LifeLogBackend\Connection\AccountDisconnector;
 use ClarionApp\LifeLogBackend\Connection\ConnectionAttemptFactory;
 use ClarionApp\LifeLogBackend\Connection\ConnectionAttemptVerifier;
 use ClarionApp\LifeLogBackend\Connection\ConnectionCompleter;
@@ -29,6 +30,7 @@ use ClarionApp\LifeLogBackend\Sync\AccountSyncRunner;
 use ClarionApp\LifeLogBackend\Sync\FailurePolicy;
 use ClarionApp\LifeLogBackend\Sync\SyncAttemptRecorder;
 use ClarionApp\LifeLogBackend\Sync\SyncLock;
+use ClarionApp\LifeLogBackend\Sync\TokenRefreshCoordinator;
 use Illuminate\Support\Facades\Schedule;
 
 class LifeLogBackendServiceProvider extends ClarionPackageServiceProvider
@@ -43,10 +45,20 @@ class LifeLogBackendServiceProvider extends ClarionPackageServiceProvider
         $this->app->singleton(SessionPromoter::class);
 
         // Account sync infrastructure
-        $this->app->singleton(FailurePolicy::class);
+        //
+        // FailurePolicy and AccountSyncRunner are bound scoped, not
+        // singleton: both now read ServiceCredentialProvider (directly, or
+        // through TokenRefreshCoordinator's persisted authorization), which
+        // is itself scoped precisely so a queue worker observes a credential
+        // rotation between jobs (see the note below). A singleton here would
+        // capture one ServiceCredentialProvider instance — and its per-service
+        // memoisation cache — for the life of the worker process, silently
+        // reintroducing the staleness obligation 7 exists to prevent.
+        $this->app->scoped(FailurePolicy::class);
         $this->app->singleton(SyncLock::class);
         $this->app->singleton(SyncAttemptRecorder::class);
-        $this->app->singleton(AccountSyncRunner::class);
+        $this->app->scoped(TokenRefreshCoordinator::class);
+        $this->app->scoped(AccountSyncRunner::class);
 
         // Single registration point for external health services. Implementations
         // register themselves against this instance from their own providers, so
@@ -67,6 +79,7 @@ class LifeLogBackendServiceProvider extends ClarionPackageServiceProvider
         $this->app->singleton(ConnectionAttemptFactory::class);
         $this->app->singleton(ConnectionAttemptVerifier::class);
         $this->app->singleton(ConnectionCompleter::class);
+        $this->app->singleton(AccountDisconnector::class);
     }
 
     public function boot(): void

@@ -280,15 +280,73 @@ final class ScriptedSyncService implements ExternalHealthService
         return $page;
     }
 
+    /** Result to return from renewAccess(), or null to use the default (always renews). */
+    private ?RenewalResult $renewAccessResult = null;
+
+    /** Exception to throw from renewAccess(), or null for the default flow. */
+    private ?HealthServiceFailure $renewAccessFailure = null;
+
+    /** Script renewAccess() to decline — a permanent refusal (FR-017). */
+    public function renewAccessDeclines(): self
+    {
+        $this->renewAccessResult = RenewalResult::declined();
+        $this->renewAccessFailure = null;
+        return $this;
+    }
+
+    /** Script renewAccess() to throw, simulating a merely transient failure. */
+    public function renewAccessThrows(HealthServiceFailure $failure): self
+    {
+        $this->renewAccessFailure = $failure;
+        $this->renewAccessResult = null;
+        return $this;
+    }
+
     public function renewAccess(string $userId): RenewalResult
     {
         $this->renewCalls[] = $userId;
-        return RenewalResult::renewed(CarbonImmutable::now()->addHours(8));
+
+        if ($this->renewAccessFailure !== null) {
+            throw $this->renewAccessFailure;
+        }
+
+        return $this->renewAccessResult ?? RenewalResult::renewed(CarbonImmutable::now()->addHours(8));
+    }
+
+    /** Result to return from disconnect(), or null to use the default. */
+    private ?DisconnectResult $disconnectResult = null;
+
+    /** Exception to throw from disconnect(), or null for success. */
+    private ?\Throwable $disconnectFailure = null;
+
+    /** @var list<string> userIds passed to disconnect */
+    public array $disconnectCalls = [];
+
+    /** Script disconnect() to return a specific result. */
+    public function disconnectReturns(DisconnectResult $result): self
+    {
+        $this->disconnectResult = $result;
+        $this->disconnectFailure = null;
+        return $this;
+    }
+
+    /** Script disconnect() to throw, simulating an unreachable or erroring provider. */
+    public function disconnectThrows(\Throwable $failure): self
+    {
+        $this->disconnectFailure = $failure;
+        $this->disconnectResult = null;
+        return $this;
     }
 
     public function disconnect(string $userId): DisconnectResult
     {
-        return DisconnectResult::confirmed();
+        $this->disconnectCalls[] = $userId;
+
+        if ($this->disconnectFailure !== null) {
+            throw $this->disconnectFailure;
+        }
+
+        return $this->disconnectResult ?? DisconnectResult::confirmed();
     }
 
     public function completeConnection(

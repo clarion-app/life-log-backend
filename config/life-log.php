@@ -129,4 +129,27 @@ return [
     */
     'sync_attempt_retention_days' => env('LIFE_LOG_SYNC_ATTEMPT_RETENTION_DAYS', 30),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Token Refresh: Lock Seconds
+    |--------------------------------------------------------------------------
+    |
+    | Duration of the per-account token refresh lock. Short and blocking,
+    | unlike the sync lock: a refresh is one HTTP call, and the caller that
+    | loses the race needs the token the winner is about to produce.
+    |
+    */
+    'token_refresh_lock_seconds' => (int) env('LIFE_LOG_TOKEN_REFRESH_LOCK_SECONDS', 30),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Token Refresh: Wait Seconds
+    |--------------------------------------------------------------------------
+    |
+    | Maximum time a caller blocks waiting for another in-flight refresh of
+    | the same account to finish before giving up.
+    |
+    */
+    'token_refresh_wait_seconds' => (int) env('LIFE_LOG_TOKEN_REFRESH_WAIT_SECONDS', 10),
+
 ];
