@@ -20,6 +20,7 @@ use ClarionApp\LifeLogBackend\Connection\AccountDisconnector;
 use ClarionApp\LifeLogBackend\Connection\ConnectionAttemptFactory;
 use ClarionApp\LifeLogBackend\Connection\ConnectionAttemptVerifier;
 use ClarionApp\LifeLogBackend\Connection\ConnectionCompleter;
+use ClarionApp\LifeLogBackend\Connection\GrantedScopeResolver;
 use ClarionApp\LifeLogBackend\Connection\RedirectUriValidator;
 use ClarionApp\LifeLogBackend\Credentials\CredentialVerifier;
 use ClarionApp\LifeLogBackend\Credentials\ServiceCredentialProvider;
@@ -92,6 +93,7 @@ class LifeLogBackendServiceProvider extends ClarionPackageServiceProvider
         $this->app->singleton(ConnectionAttemptVerifier::class);
         $this->app->singleton(ConnectionCompleter::class);
         $this->app->singleton(AccountDisconnector::class);
+        $this->app->singleton(GrantedScopeResolver::class);
 
         // Google Health integration
         // Binds the OAuth flow and registers 'google-health' through the registry.

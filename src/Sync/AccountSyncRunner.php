@@ -4,6 +4,7 @@ namespace ClarionApp\LifeLogBackend\Sync;
 
 use ClarionApp\LifeLogBackend\Contracts\FailureKind;
 use ClarionApp\LifeLogBackend\Credentials\ServiceCredentialProvider;
+use ClarionApp\LifeLogBackend\Events\ConnectedAccountStatusChanged;
 use ClarionApp\LifeLogBackend\External\HealthServiceRegistry;
 use ClarionApp\LifeLogBackend\Exceptions\HealthServiceFailure;
 use ClarionApp\LifeLogBackend\Models\AccountSyncState;
@@ -379,6 +380,8 @@ final class AccountSyncRunner
         $state->save();
 
         $this->refreshCredentialVersion($account);
+
+        Event::dispatch(new ConnectedAccountStatusChanged($account));
     }
 
     /**
@@ -444,6 +447,8 @@ final class AccountSyncRunner
                 // Fire the attention event
                 Event::dispatch(new \ClarionApp\LifeLogBackend\Events\ConnectedAccountNeedsAttention($account));
             }
+
+            Event::dispatch(new ConnectedAccountStatusChanged($account));
         }
     }
 }

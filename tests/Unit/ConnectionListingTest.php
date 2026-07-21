@@ -88,6 +88,9 @@ class ConnectionListingTest extends TestCase
             'last_successful_sync_at',
             'connected_at',
             'needs_attention_reason',
+            'granted_scopes',
+            'granted_types',
+            'missing_types',
         ], array_keys($entry));
     }
 

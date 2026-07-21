@@ -122,4 +122,12 @@ class HealthServiceRegistry
     {
         return array_keys($this->factories);
     }
+
+    /**
+     * Remove a service registration (primarily for test cleanup).
+     */
+    public function forget(string $name): void
+    {
+        unset($this->factories[$name], $this->resolved[$name]);
+    }
 }

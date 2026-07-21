@@ -4,12 +4,14 @@ namespace ClarionApp\LifeLogBackend\Connection;
 
 use ClarionApp\LifeLogBackend\Contracts\ExternalHealthService;
 use ClarionApp\LifeLogBackend\Credentials\ServiceCredentialProvider;
+use ClarionApp\LifeLogBackend\Events\ConnectedAccountStatusChanged;
 use ClarionApp\LifeLogBackend\Exceptions\HealthServiceFailure;
 use ClarionApp\LifeLogBackend\Models\AccountAuthorization;
 use ClarionApp\LifeLogBackend\Models\ConnectedAccount;
 use ClarionApp\LifeLogBackend\Models\ServiceCredential;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 
 /**
@@ -75,29 +77,33 @@ final class ConnectionCompleter
                 // Reset sync health
                 $account->resetSyncHealth();
             } else {
-                // Create new account
-                $account = ConnectedAccount::create([
-                    'id' => (string) Str::uuid(),
-                    'user_id' => $userId,
-                    'external_service' => $externalService,
-                    'sync_state' => 'normal',
-                    'connected_at' => now(),
-                ]);
+                // Create new account (id not fillable — set directly)
+                $account = new ConnectedAccount();
+                $account->id = (string) Str::uuid();
+                $account->user_id = $userId;
+                $account->external_service = $externalService;
+                $account->sync_state = 'normal';
+                $account->connected_at = now();
+                $account->save();
             }
 
-            // Create the new authorization
-            AccountAuthorization::create([
-                'id' => (string) Str::uuid(),
-                'connected_account_id' => $account->id,
-                'access_token' => $grant->accessToken,
-                'refresh_token' => $grant->refreshToken,
-                'expires_at' => $grant->expiresAt?->toDateTimeString(),
-                'scopes' => $grant->scopes,
-                'credential_version' => $credential->version,
-            ]);
+            // Create the new authorization (id not fillable — set directly)
+            $authorization = new AccountAuthorization();
+            $authorization->id = (string) Str::uuid();
+            $authorization->connected_account_id = $account->id;
+            $authorization->access_token = $grant->accessToken;
+            $authorization->refresh_token = $grant->refreshToken;
+            $authorization->expires_at = $grant->expiresAt?->toDateTimeString();
+            $authorization->scopes = $grant->scopes;
+            $authorization->credential_version = $credential->version;
+            $authorization->save();
+
+            $freshAccount = $account->fresh();
+
+            Event::dispatch(new ConnectedAccountStatusChanged($freshAccount));
 
             return [
-                'account' => $account->fresh(),
+                'account' => $freshAccount,
                 'reconnected' => $reconnected,
             ];
         });

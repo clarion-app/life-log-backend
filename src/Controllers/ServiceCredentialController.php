@@ -6,6 +6,7 @@ use ClarionApp\LifeLogBackend\Connection\RedirectUriValidator;
 use ClarionApp\LifeLogBackend\Credentials\CredentialVerifier;
 use ClarionApp\LifeLogBackend\Credentials\ServiceCredentialProvider;
 use ClarionApp\LifeLogBackend\Credentials\VerificationOutcome;
+use ClarionApp\LifeLogBackend\Events\ConnectedAccountStatusChanged;
 use ClarionApp\LifeLogBackend\External\HealthServiceRegistry;
 use ClarionApp\LifeLogBackend\Models\ServiceCredential;
 use ClarionApp\LifeLogBackend\Models\ConnectedAccount;
@@ -17,6 +18,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 
 class ServiceCredentialController extends Controller
 {
@@ -207,6 +209,7 @@ class ServiceCredentialController extends Controller
                 ]);
             }
 
+            Event::dispatch(new ConnectedAccountStatusChanged($account));
             $markedCount++;
         }
 

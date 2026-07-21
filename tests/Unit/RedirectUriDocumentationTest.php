@@ -12,22 +12,34 @@ use ClarionApp\LifeLogBackend\Models\ServiceCredential;
 use GuzzleHttp\Client;
 
 /**
- * T117 — The redirect URI stated in the setup documentation matches what
- * GoogleOauthFlow actually sends, so the two cannot drift.
+ * T022 — The redirect URI stated in the setup documentation is the real one.
  *
- * The docs say the callback path is
- * `/api/life-log/connected-accounts/callback`. This test asserts that
- * GoogleOauthFlow passes the redirect_uri parameter through to Google's
- * authorize endpoint without modification, and that the route registered
- * for the callback matches the path documented.
+ * Compose the real API prefix from composer.json → extra.clarion.app-name,
+ * assert the docs no longer name the stale API path, and assert the documented
+ * redirect URI is the frontend callback path.
  */
 class RedirectUriDocumentationTest extends TestCase
 {
     /**
-     * The redirect URI path documented in docs/google-health-setup.md.
+     * The frontend callback path that the docs should state.
      * This is the path portion (without scheme/host) that Google redirects to.
      */
-    private const DOCUMENTED_CALLBACK_PATH = '/connected-accounts/callback';
+    private const FRONTEND_CALLBACK_PATH = '/clarion-app/life-log/connected-services/callback';
+
+    /**
+     * Compose the real API prefix from composer.json → extra.clarion.app-name.
+     * ClarionPackageServiceProvider computes: 'api/' . str_replace('@', '', $app_name)
+     * e.g., '@clarion-app/life-log' → 'api/clarion-app/life-log'
+     */
+    private static function realApiPrefix(): string
+    {
+        $composerJson = file_get_contents(dirname(__DIR__, 2) . '/composer.json');
+        $manifest = json_decode($composerJson, true);
+        $appName = $manifest['extra']['clarion']['app-name'] ?? '';
+        // ClarionPackageServiceProvider strips '@' and prepends 'api/'
+        $stripped = str_replace('@', '', $appName);
+        return 'api/' . $stripped;
+    }
 
     /**
      * Shared setup: create a credential so ServiceCredentialProvider can find it.
@@ -41,9 +53,97 @@ class RedirectUriDocumentationTest extends TestCase
             'external_service' => 'google-health',
             'client_id' => 'test-client-id',
             'client_secret' => 'test-secret',
-            'redirect_uri' => 'https://example.com/api/life-log/connected-accounts/callback',
+            'redirect_uri' => 'https://example.com' . self::FRONTEND_CALLBACK_PATH . '/google-health',
             'version' => 1,
         ]);
+    }
+
+    /** @test T022 — composer.json extra.clarion.app-name yields the real prefix */
+    public function composerJsonYieldsRealPrefix(): void
+    {
+        $prefix = self::realApiPrefix();
+        // The prefix should be 'api/clarion-app/life-log' for this package
+        $this->assertSame('api/clarion-app/life-log', $prefix);
+    }
+
+    /** @test T022 — the docs must NOT name the stale API callback path */
+    public function docsMustNotNameStaleApiCallbackPath(): void
+    {
+        $docsFile = dirname(__DIR__, 2) . '/docs/google-health-setup.md';
+        $docsContent = file_get_contents($docsFile);
+
+        // The old path that 404s must NOT appear in the docs
+        $this->assertStringNotContainsString(
+            'api/life-log/connected-accounts/callback',
+            $docsContent,
+            'docs/google-health-setup.md must not name the stale API callback path (api/life-log/connected-accounts/callback)'
+        );
+    }
+
+    /** @test T022 — the docs must name the frontend callback path */
+    public function docsMustNameFrontendCallbackPath(): void
+    {
+        $docsFile = dirname(__DIR__, 2) . '/docs/google-health-setup.md';
+        $docsContent = file_get_contents($docsFile);
+
+        // The docs must contain the frontend callback path
+        $this->assertStringContainsString(
+            self::FRONTEND_CALLBACK_PATH,
+            $docsContent,
+            'docs/google-health-setup.md must document the frontend callback path'
+        );
+
+        // The docs must show the callback path with a service parameter placeholder
+        $this->assertStringContainsString(
+            '/callback/{service}',
+            $docsContent,
+            'docs/google-health-setup.md must show the callback path with {service} placeholder'
+        );
+    }
+
+    /** @test T022 — the documented redirect URI is well-formed */
+    public function documentedRedirectUriIsWellFormed(): void
+    {
+        $docsFile = dirname(__DIR__, 2) . '/docs/google-health-setup.md';
+        $docsContent = file_get_contents($docsFile);
+
+        // The documented redirect URI must use https
+        $this->assertStringContainsString(
+            'https://your-domain.com' . self::FRONTEND_CALLBACK_PATH,
+            $docsContent,
+            'The documented redirect URI must use https and the frontend callback path'
+        );
+    }
+
+    /** @test T022 — cross-package agreement with life-log-frontend/package.json (optional) */
+    public function frontendManifestMatchesCallbackPath(): void
+    {
+        $frontendPkgPath = dirname(__DIR__, 3) . '/life-log-frontend/package.json';
+
+        if (!file_exists($frontendPkgPath)) {
+            $this->markTestSkipped('life-log-frontend/package.json not found (expected when installed from Packagist)');
+        }
+
+        $frontendPkg = json_decode(file_get_contents($frontendPkgPath), true);
+        $routes = $frontendPkg['customFields']['clarion']['routes'] ?? [];
+
+        $callbackRoute = null;
+        foreach ($routes as $route) {
+            if (isset($route['path']) && str_contains($route['path'], ':service') && str_contains($route['path'], 'callback')) {
+                $callbackRoute = $route['path'];
+                break;
+            }
+        }
+
+        $this->assertNotNull($callbackRoute, 'life-log-frontend/package.json must declare a callback route with :service');
+
+        // The route base (without /:service) must match our constant
+        $routeBase = str_replace('/:service', '', $callbackRoute);
+        $this->assertSame(
+            self::FRONTEND_CALLBACK_PATH,
+            $routeBase,
+            "The frontend callback route base must match the documented path"
+        );
     }
 
     /** @test T117 — authorizeUrl passes redirect_uri to Google unchanged */
@@ -57,7 +157,7 @@ class RedirectUriDocumentationTest extends TestCase
             $this->app->make(Client::class),
         );
 
-        $testRedirectUri = 'https://example.com/api/life-log/connected-accounts/callback';
+        $testRedirectUri = 'https://example.com' . self::FRONTEND_CALLBACK_PATH . '/google-health';
         $result = $flow->authorizeUrl('user-123', $testRedirectUri);
 
         // The URL must contain the redirect_uri parameter
@@ -112,69 +212,12 @@ class RedirectUriDocumentationTest extends TestCase
             $this->app->make(Client::class),
         );
 
-        $testRedirectUri = 'https://example.com/api/life-log/connected-accounts/callback';
+        $testRedirectUri = 'https://example.com' . self::FRONTEND_CALLBACK_PATH . '/google-health';
         $flow->exchangeCode('auth_code_123', $testRedirectUri);
 
         // The request was captured — verify it hit the token endpoint
         $uri = $transport->lastUri();
         $this->assertNotNull($uri, 'exchangeCode should have made an HTTP request');
         $this->assertStringContainsString(ApiVersion::OAUTH_TOKEN, (string) $uri);
-    }
-
-    /** @test T117 — the callback route path matches the documented path */
-    public function callbackRouteMatchesDocumentedPath(): void
-    {
-        // Read the routes file and extract the callback route definition.
-        $routesFile = dirname(__DIR__, 2) . '/routes/api.php';
-        $routesContent = file_get_contents($routesFile);
-
-        // The routes file must declare a callback route
-        $this->assertStringContainsString(
-            "connected-accounts/callback",
-            $routesContent,
-            'routes/api.php must declare a connected-accounts/callback route'
-        );
-
-        // The route must be a POST route (for the OAuth callback)
-        $this->assertStringContainsString(
-            "Route::post('connected-accounts/callback'",
-            $routesContent,
-            'The callback route must be POST (OAuth callback standard)'
-        );
-
-        // Verify the documented path matches the route definition
-        $this->assertMatchesRegularExpression(
-            '/Route::post\(\'connected-accounts\/callback\'/',
-            $routesContent,
-            "The callback route path must match the documented path: " . self::DOCUMENTED_CALLBACK_PATH
-        );
-    }
-
-    /** @test T117 — the documented redirect URI example is well-formed */
-    public function documentedRedirectUriIsWellFormed(): void
-    {
-        $docsFile = dirname(__DIR__, 2) . '/docs/google-health-setup.md';
-        $docsContent = file_get_contents($docsFile);
-
-        // The docs must mention the callback path
-        $this->assertStringContainsString(
-            'connected-accounts/callback',
-            $docsContent,
-            'Setup docs must mention the callback path'
-        );
-
-        // The docs must show the full path including the api prefix
-        $this->assertStringContainsString(
-            'api/life-log/connected-accounts/callback',
-            $docsContent,
-            'Setup docs must show the full route path'
-        );
-
-        // The docs must warn about exact matching
-        $this->assertStringContainsString(
-            'exact',
-            strtolower($docsContent),
-            'Setup docs must warn that the redirect URI must match exactly'
-        );
     }
 }

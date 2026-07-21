@@ -90,12 +90,19 @@ right architecture.
    from your instance. The redirect URI must match the callback route exactly:
 
    ```
-   https://your-domain.com/api/life-log/connected-accounts/callback
+   https://your-domain.com/clarion-app/life-log/connected-services/callback/{service}
    ```
 
-   Replace `your-domain.com` with your actual domain. This must be an exact
-   match — the code asserts this (see `RedirectUriDocumentationTest`). Google
-   will reject the redirect if the URI does not match exactly.
+   Replace `your-domain.com` with your actual domain and `{service}` with the
+   service slug (e.g., `google-health`). This must be an exact match — the code
+   asserts this (see `RedirectUriDocumentationTest`). Google will reject the
+   redirect if the URI does not match exactly.
+
+   > **Note**: If you previously configured a redirect URI from older
+   > documentation, you need to update it in the Google Cloud Console to use
+   > the path above. You can also re-save the correct value through the
+   > Wearable Services area — the mismatch warning will surface if the stored
+   > `redirect_uri` differs from the derived frontend callback path.
 
    > **Important**: Use `https://` — Google requires HTTPS for production
    > redirect URIs. For local development you may use `http://localhost` but
@@ -117,7 +124,7 @@ right architecture.
      "external_service": "google-health",
      "client_id": "<your client id>",
      "client_secret": "<your client secret>",
-     "redirect_uri": "https://your-domain.com/api/life-log/connected-accounts/callback"
+     "redirect_uri": "https://your-domain.com/clarion-app/life-log/connected-services/callback/google-health"
    }
    ```
 
