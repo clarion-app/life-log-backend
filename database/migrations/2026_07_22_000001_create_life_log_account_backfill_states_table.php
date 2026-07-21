@@ -22,8 +22,12 @@ return new class extends Migration
             $table->string('last_error_kind', 32)->nullable();
             $table->timestamps();
 
-            // One backfill state per connected account + measurement type
-            $table->unique(['connected_account_id', 'type']);
+            // One backfill state per connected account + measurement type.
+            // Named explicitly: the generated name exceeds MySQL's 64-char limit.
+            $table->unique(
+                ['connected_account_id', 'type'],
+                'life_log_backfill_states_account_type_unique'
+            );
             // Sweep finds incomplete backfills
             $table->index('complete_at');
 

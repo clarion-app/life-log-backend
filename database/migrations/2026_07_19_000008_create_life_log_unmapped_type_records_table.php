@@ -21,8 +21,12 @@ return new class extends Migration
             $table->unsignedBigInteger('occurrence_count')->default(1);
             $table->timestamps();
 
-            // Upsert key: one row per (service, type name)
-            $table->unique(['external_service', 'service_type_name']);
+            // Upsert key: one row per (service, type name).
+            // Named explicitly: the generated name exceeds MySQL's 64-char limit.
+            $table->unique(
+                ['external_service', 'service_type_name'],
+                'life_log_unmapped_types_service_name_unique'
+            );
         });
     }
 

@@ -18,8 +18,12 @@ return new class extends Migration
             $table->string('deferred_reason', 32)->nullable();
             $table->timestamps();
 
-            // Re-marking an already-pending bucket is an idempotent no-op upsert
-            $table->unique(['user_id', 'external_service', 'type', 'unit', 'bucket_hour']);
+            // Re-marking an already-pending bucket is an idempotent no-op upsert.
+            // Named explicitly: the generated name exceeds MySQL's 64-char limit.
+            $table->unique(
+                ['user_id', 'external_service', 'type', 'unit', 'bucket_hour'],
+                'life_log_rollup_queue_bucket_unique'
+            );
         });
     }
 
