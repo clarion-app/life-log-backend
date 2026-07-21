@@ -5,7 +5,6 @@ namespace ClarionApp\LifeLogBackend\Google\Oauth;
 use ClarionApp\LifeLogBackend\Contracts\FailureKind;
 use ClarionApp\LifeLogBackend\Credentials\ServiceCredentialProvider;
 use ClarionApp\LifeLogBackend\Exceptions\HealthServiceFailure;
-use ClarionApp\LifeLogBackend\Exceptions\ServiceNotConfiguredException;
 use ClarionApp\LifeLogBackend\Google\Api\ApiVersion;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
@@ -149,22 +148,83 @@ final class GoogleOauthFlow
      *
      * Reads the authorization row on every call — never caches.
      *
-     * @throws ServiceNotConfiguredException if no authorization exists
+     * @throws HealthServiceFailure AccessRevoked when no usable authorization
+     *         is stored: the connection has to be re-established, which is the
+     *         same remedy as a revoked grant.
      */
     public function getAccessToken(string $userId): string
     {
-        $authorization = \ClarionApp\LifeLogBackend\Models\AccountAuthorization::where(
-            'connected_account_id',
-            $this->findAccountId($userId),
-        )->first();
+        $authorization = $this->authorizationFor($userId);
 
         if ($authorization === null || $authorization->access_token === null) {
-            throw new ServiceNotConfiguredException(
-                "No access token found for user {$userId}."
+            throw HealthServiceFailure::accessRevoked(
+                'No stored Google authorization for this user.'
             );
         }
 
         return $authorization->access_token;
+    }
+
+    /**
+     * Get the stored refresh token for a user.
+     *
+     * @throws HealthServiceFailure AccessRevoked when none is stored — a grant
+     *         with no refresh token cannot be renewed, only reconnected.
+     */
+    public function getRefreshToken(string $userId): string
+    {
+        $authorization = $this->authorizationFor($userId);
+
+        if ($authorization === null || $authorization->refresh_token === null) {
+            throw HealthServiceFailure::accessRevoked(
+                'No stored Google refresh token for this user.'
+            );
+        }
+
+        return $authorization->refresh_token;
+    }
+
+    /**
+     * Persist a freshly issued access token against the stored authorization.
+     *
+     * RenewalResult deliberately carries no token (055) — the service owns its
+     * credentials — so the renewal is only durable if it is written here.
+     * Without this, getAccessToken() keeps handing back the expired token and
+     * every subsequent fetch re-enters the renewal path.
+     */
+    public function storeAccessToken(
+        string $userId,
+        string $accessToken,
+        ?\Carbon\CarbonImmutable $expiresAt,
+    ): void {
+        $authorization = $this->authorizationFor($userId);
+
+        if ($authorization === null) {
+            return;
+        }
+
+        $authorization->access_token = $accessToken;
+        $authorization->expires_at = $expiresAt;
+        $authorization->refreshed_at = \Carbon\CarbonImmutable::now();
+        $authorization->save();
+    }
+
+    /**
+     * The stored authorization row for a user's Google account, or null.
+     */
+    private function authorizationFor(
+        string $userId,
+    ): ?\ClarionApp\LifeLogBackend\Models\AccountAuthorization {
+        $accountId = $this->findAccountId($userId);
+
+        if ($accountId === null) {
+            return null;
+        }
+
+        return \ClarionApp\LifeLogBackend\Models\AccountAuthorization::where(
+            'connected_account_id',
+            $accountId,
+        )->first();
     }
 
     /**
@@ -185,23 +245,16 @@ final class GoogleOauthFlow
     }
 
     /**
-     * Find the connected account id for a user by their user_id.
-     *
-     * @throws ServiceNotConfiguredException if no account exists
+     * Find the connected account id for a user by their user_id, or null when
+     * the user has no Google connection. Absence is a caller-visible outcome,
+     * not an exception: the callers above turn it into the AccessRevoked
+     * failure the engine already knows how to route.
      */
-    private function findAccountId(string $userId): string
+    private function findAccountId(string $userId): ?string
     {
-        $account = \ClarionApp\LifeLogBackend\Models\ConnectedAccount::where('user_id', $userId)
+        return \ClarionApp\LifeLogBackend\Models\ConnectedAccount::where('user_id', $userId)
             ->where('external_service', 'google-health')
-            ->first();
-
-        if ($account === null) {
-            throw new ServiceNotConfiguredException(
-                "No connected Google account found for user {$userId}."
-            );
-        }
-
-        return $account->id;
+            ->value('id');
     }
 
     /**

@@ -124,8 +124,12 @@ class DisconnectDuringSyncTest extends TestCase
         // Create a sync attempt
         SyncAttempt::create([
             'connected_account_id' => $account->id,
+            'user_id' => $account->user_id,
+            'external_service' => $account->external_service,
             'trigger' => 'scheduled',
             'outcome' => 'success',
+            'range_since' => CarbonImmutable::now()->subDay(),
+            'range_until' => CarbonImmutable::now()->subHour(),
             'started_at' => CarbonImmutable::now()->subHour(),
             'finished_at' => CarbonImmutable::now()->subHour(),
         ]);

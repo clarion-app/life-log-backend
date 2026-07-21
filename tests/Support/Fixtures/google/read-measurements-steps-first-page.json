@@ -2,33 +2,35 @@
   "_comment": "Fixture: Steps intraday list - first page. Stamped v1, captured 2026-07-20.",
   "_api_version": "v1",
   "_capture_date": "2026-07-20",
-  "_endpoint": "GET /v1/users/{userId}/data/steps:read",
+  "_endpoint": "GET /v1/users/{userId}/dataTypes/stepCount:readList",
   "_description": "First page of step count measurements with nextPageToken.",
   "dataset": [
     {
-      "startTimeNanos": "1753017600000000000",
-      "endTimeNanos": "1753017600000000000",
-      "dataSourceId": "derived:com.google.step_count.delta:com.google.android.gms:estimated_steps",
-      "totalPointCount": 1,
-      "minPointCount": 1,
-      "values": [
+      "point": [
         {
-          "intVal": 12500
-        }
-      ]
-    },
-    {
-      "startTimeNanos": "1753021200000000000",
-      "endTimeNanos": "1753021200000000000",
-      "dataSourceId": "derived:com.google.step_count.delta:com.google.android.gms:estimated_steps",
-      "totalPointCount": 1,
-      "minPointCount": 1,
-      "values": [
+          "dataType": "stepCount",
+          "startedAtMs": 1753017600000,
+          "endedAtMs": 1753017660000,
+          "value": [
+            {
+              "intVal": 120
+            }
+          ],
+          "unit": "steps"
+        },
         {
-          "intVal": 8200
+          "dataType": "stepCount",
+          "startedAtMs": 1753017660000,
+          "endedAtMs": 1753017720000,
+          "value": [
+            {
+              "intVal": 95
+            }
+          ],
+          "unit": "steps"
         }
       ]
     }
   ],
-  "nextPageToken": "CjkKEwi2x7mBgaKjBhVYmaYKHQlQRRoTCPCfh"
+  "nextPageToken": "CjkKEwi2x7mBgaKjBhVYmaYKHQlQRRoTCPCfi"
 }

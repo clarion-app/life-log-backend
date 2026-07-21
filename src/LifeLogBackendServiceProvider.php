@@ -111,7 +111,13 @@ class LifeLogBackendServiceProvider extends ClarionPackageServiceProvider
         // This keeps the out-of-package registration path (StubBandServiceProvider) live.
         $this->app->make(HealthServiceRegistry::class)->register(
             GoogleHealthService::NAME,
-            fn () => new GoogleHealthService($this->app->make(GoogleOauthFlow::class)),
+            fn () => new GoogleHealthService(
+                $this->app->make(GoogleOauthFlow::class),
+                // Honour an optional transport binding (the scripted seam under
+                // test) here too — without it the fetch path builds its own
+                // client and reaches the real network.
+                $this->app->bound(Client::class) ? $this->app->make(Client::class) : null,
+            ),
         );
 
         parent::boot();

@@ -43,6 +43,16 @@ final class ServiceCredentialProvider
         }
 
         $credential = ServiceCredential::liveByService($externalService)->first();
+
+        // Hits are memoised; misses are not. Remembering "not configured" is
+        // the one answer this class can serve staler than reality — a
+        // credential entered at /service-credentials would then stay invisible
+        // for the rest of the request that happened to ask first, which is
+        // precisely the restart-free pickup SC-001 promises.
+        if ($credential === null) {
+            return null;
+        }
+
         return $this->cache[$externalService] = $credential;
     }
 

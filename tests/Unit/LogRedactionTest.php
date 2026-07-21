@@ -243,10 +243,16 @@ class LogRedactionTest extends TestCase
 
         // Backfill — clear and script fresh responses.
         $transport->clearResponses($this->app);
-        $transport->respondJson(200, [
-            'dataset' => [],
-            'nextPageToken' => null,
-        ]);
+
+        // Enough empty pages for the backfill walk plus the remote revoke that
+        // teardown issues. The count is deliberately loose: this test is about
+        // what reaches the log, not about how many requests each step makes.
+        for ($i = 0; $i < 12; $i++) {
+            $transport->respondJson(200, [
+                'dataset' => [],
+                'nextPageToken' => null,
+            ]);
+        }
 
         $backfillRunner = app(BackfillRunner::class);
         $backfillRunner->run($account, MeasurementType::Weight);

@@ -102,7 +102,10 @@ class FailurePolicyTest extends TestCase
             $now,
         );
 
-        $this->assertTrue($response->countsAsFailure);
+        // FR-018: a rate limit defers the next attempt but is not counted as a
+        // connection failure, so it never advances the ladder or flags.
+        $this->assertFalse($response->countsAsFailure);
+        $this->assertFalse($response->flagsImmediately);
         $this->assertEquals($now->addMinutes(60), $response->nextAttemptAt);
     }
 

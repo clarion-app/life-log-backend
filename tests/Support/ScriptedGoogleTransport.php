@@ -122,16 +122,15 @@ class ScriptedGoogleTransport
      * Clear all scripted responses and start fresh.
      * Re-binds the new handler stack into the container.
      */
-    public function clearResponses(Container $app): void
+    public function clearResponses(?Container $app = null): void
     {
+        // Reset the queue in place rather than building a new client and
+        // rebinding it. Singletons resolved before this call — GoogleOauthFlow,
+        // and the service the registry memoised — keep the client they were
+        // constructed with, so a rebind would leave half the code talking to a
+        // transport with an empty queue and no obvious reason why.
+        $this->mock->reset();
         $this->history = [];
-        $this->mock = new MockHandler();
-        $this->stack = HandlerStack::create($this->mock);
-        $this->stack->push(Middleware::history($this->history), 'history');
-
-        $client = new Client(['handler' => $this->stack]);
-        $app->instance(Client::class, $client);
-        $app->instance('guzzle', $client);
     }
 
     /**

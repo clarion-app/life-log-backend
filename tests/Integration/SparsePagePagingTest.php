@@ -4,6 +4,7 @@ namespace Tests\Integration;
 
 use Tests\TestCase;
 use Tests\Support\ScriptedGoogleTransport;
+use Tests\Support\ConnectsGoogleAccount;
 use ClarionApp\LifeLogBackend\Google\GoogleHealthService;
 use ClarionApp\LifeLogBackend\Models\ServiceCredential;
 use ClarionApp\LifeLogBackend\External\HealthServiceRegistry;
@@ -15,6 +16,8 @@ use Carbon\CarbonImmutable;
  */
 class SparsePagePagingTest extends TestCase
 {
+    use ConnectsGoogleAccount;
+
     protected $user;
     protected $transport;
 
@@ -42,6 +45,8 @@ class SparsePagePagingTest extends TestCase
 
         $this->transport = ScriptedGoogleTransport::make();
         $this->transport->bind($this->app);
+
+        $this->connectGoogleAccount($this->user->id);
     }
 
     /** @test T056 — empty page followed by data page */
@@ -77,7 +82,11 @@ class SparsePagePagingTest extends TestCase
         $since = CarbonImmutable::parse('2025-07-20 00:00:00', 'UTC');
         $until = CarbonImmutable::parse('2025-07-20 01:00:00', 'UTC');
 
-        $page = $service->fetch(
+        // The empty page is a sparse span, not the end of the range: it comes
+        // back with a cursor, and following that cursor reaches the data. A
+        // caller that stopped at the empty page would truncate the window and
+        // be unable to tell that from "no more history".
+        $first = $service->fetch(
             $this->user->id,
             $since,
             $until,
@@ -85,9 +94,45 @@ class SparsePagePagingTest extends TestCase
             [MeasurementType::Steps],
         );
 
-        // Data from second page should be present
-        $this->assertCount(1, $page->measurements);
+        $this->assertCount(0, $first->measurements());
+        $this->assertNotNull($first->nextCursor());
+
+        $second = $service->fetch(
+            $this->user->id,
+            $since,
+            $until,
+            $first->nextCursor(),
+            [MeasurementType::Steps],
+        );
+
+        $this->assertCount(1, $second->measurements());
+        $this->assertNull($second->nextCursor());
         $this->assertSame(2, $this->transport->requestCount());
+    }
+
+    /**
+     * Drive a range to exhaustion the way the engine does — one request per
+     * fetch, resuming from the returned cursor.
+     *
+     * @return list<\ClarionApp\LifeLogBackend\External\TranslatedMeasurement>
+     */
+    private function drain(
+        $service,
+        CarbonImmutable $since,
+        CarbonImmutable $until,
+        MeasurementType $type,
+    ): array {
+        $measurements = [];
+        $cursor = null;
+        $guard = 0;
+
+        do {
+            $page = $service->fetch($this->user->id, $since, $until, $cursor, [$type]);
+            $measurements = array_merge($measurements, $page->measurements());
+            $cursor = $page->nextCursor();
+        } while ($cursor !== null && ++$guard < 20);
+
+        return $measurements;
     }
 
     /** @test T056 — multiple empty pages before data */
@@ -129,15 +174,10 @@ class SparsePagePagingTest extends TestCase
         $since = CarbonImmutable::parse('2025-07-20 00:00:00', 'UTC');
         $until = CarbonImmutable::parse('2025-07-20 01:00:00', 'UTC');
 
-        $page = $service->fetch(
-            $this->user->id,
-            $since,
-            $until,
-            null,
-            [MeasurementType::HeartRate],
-        );
+        $measurements = $this->drain($service, $since, $until, MeasurementType::HeartRate);
 
-        $this->assertCount(1, $page->measurements);
+        // Three consecutive gaps do not end the range.
+        $this->assertCount(1, $measurements);
         $this->assertSame(4, $this->transport->requestCount());
     }
 
@@ -164,8 +204,8 @@ class SparsePagePagingTest extends TestCase
             [MeasurementType::HeartRate],
         );
 
-        $this->assertCount(0, $page->measurements);
-        $this->assertNull($page->nextCursor);
+        $this->assertCount(0, $page->measurements());
+        $this->assertNull($page->nextCursor());
         $this->assertSame(1, $this->transport->requestCount());
     }
 
@@ -216,15 +256,9 @@ class SparsePagePagingTest extends TestCase
         $since = CarbonImmutable::parse('2025-07-20 00:00:00', 'UTC');
         $until = CarbonImmutable::parse('2025-07-20 01:00:00', 'UTC');
 
-        $page = $service->fetch(
-            $this->user->id,
-            $since,
-            $until,
-            null,
-            [MeasurementType::CaloriesBurned],
-        );
+        $measurements = $this->drain($service, $since, $until, MeasurementType::CaloriesBurned);
 
-        $this->assertCount(2, $page->measurements);
+        $this->assertCount(2, $measurements);
         $this->assertSame(3, $this->transport->requestCount());
     }
 }

@@ -80,7 +80,6 @@ class RequestBudget
         $perMinute = (int) config('life-log.budget.per_minute', 100000);
         $perDay = (int) config('life-log.budget.per_day', 80000000);
         $incrementalReserve = (int) config('life-log.budget.incremental_reserve', 5000);
-        $maxBackfillPerRun = (int) config('life-log.budget.max_requests_per_backfill_run', 500);
 
         // Check per-minute ceiling
         $minuteUsed = $this->minuteCount($service);
@@ -101,14 +100,13 @@ class RequestBudget
             if ($minuteUsed + $n > $backfillLimit) {
                 return false;
             }
-
-            // Check per-run limit for backfill
-            $runKey = "life-log:budget:{$service}:run:" . spl_object_id($this);
-            $runUsed = (int) Cache::get($runKey, 0);
-            if ($runUsed + $n > $maxBackfillPerRun) {
-                return false;
-            }
         }
+
+        // The per-run cap (max_requests_per_backfill_run) is deliberately not
+        // enforced here. A "run" is not something this object can see: it holds
+        // no run identity, and the instance-wide counters it does hold outlive
+        // every run. BackfillRunner counts its own fetches against the cap,
+        // which is where the run actually exists.
 
         // Atomically increment both counters
         $minuteOk = $this->incrementMinute($service, $n);
@@ -121,12 +119,6 @@ class RequestBudget
             // Roll back minute increment (best effort)
             $this->rollBackMinute($service, $n);
             return false;
-        }
-
-        // For backfill, track per-run count
-        if ($isBackfill) {
-            $runKey = "life-log:budget:{$service}:run:" . spl_object_id($this);
-            Cache::increment($runKey, $n);
         }
 
         return true;
@@ -147,21 +139,19 @@ class RequestBudget
     private function incrementMinute(string $service, int $n): bool
     {
         $key = "life-log:budget:{$service}:min:" . now()->format('YmdHi');
-
-        // Use Cache::add for atomic initialization, then increment
-        $current = (int) Cache::get($key, 0);
         $perMinute = (int) config('life-log.budget.per_minute', 100000);
 
-        if ($current + $n > $perMinute) {
+        if ((int) Cache::get($key, 0) + $n > $perMinute) {
             return false;
         }
 
+        // add-then-increment, in that order. increment() on a missing key
+        // creates it without a TTL on the stores that create it at all, and a
+        // later add() is a no-op because the key now exists — so reversing
+        // these two leaves a counter that never expires. Key expiry is the
+        // only cleanup this budget has.
+        Cache::add($key, 0, now()->addSeconds(120));
         Cache::increment($key, $n);
-
-        // Set TTL if this is a new key (120 seconds)
-        if ($current === 0) {
-            Cache::add($key, $n, now()->addSeconds(120));
-        }
 
         return true;
     }
@@ -169,20 +159,14 @@ class RequestBudget
     private function incrementDay(string $service, int $n): bool
     {
         $key = "life-log:budget:{$service}:day:" . now()->format('Ymd');
-
-        $current = (int) Cache::get($key, 0);
         $perDay = (int) config('life-log.budget.per_day', 80000000);
 
-        if ($current + $n > $perDay) {
+        if ((int) Cache::get($key, 0) + $n > $perDay) {
             return false;
         }
 
+        Cache::add($key, 0, now()->addHours(48));
         Cache::increment($key, $n);
-
-        // Set TTL if this is a new key (48 hours)
-        if ($current === 0) {
-            Cache::add($key, $n, now()->addHours(48));
-        }
 
         return true;
     }

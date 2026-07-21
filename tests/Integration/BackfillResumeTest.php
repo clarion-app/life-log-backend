@@ -108,8 +108,13 @@ class BackfillResumeTest extends TestCase
             ->where('type', MeasurementType::Steps->value)
             ->first();
         $this->assertNotNull($state->cursor, 'Cursor should be saved after partial run.');
-        $this->assertEquals($now, CarbonImmutable::instance($state->backfilled_to),
-            'backfilled_to should NOT advance after a partial run.');
+        // Second granularity: the column stores seconds, so comparing against a
+        // Carbon carrying microseconds fails on the sub-second remainder alone.
+        $this->assertSame(
+            $now->startOfSecond()->toIso8601String(),
+            CarbonImmutable::instance($state->backfilled_to)->startOfSecond()->toIso8601String(),
+            'backfilled_to should NOT advance after a partial run.',
+        );
 
         // Reset the service with remaining pages
         $service->resetPages(array_slice($pages, 2));

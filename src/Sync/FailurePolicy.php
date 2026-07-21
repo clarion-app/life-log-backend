@@ -97,18 +97,21 @@ class FailurePolicy
         int $ladderMinutes,
         int $maxFailures,
     ): FailureResponse {
-        $countsAsFailure = true;
-        $flagsImmediately = ($state->consecutive_failures + 1) >= $maxFailures;
-
         // Use max(ladder[n], retryAfterSeconds) as a floor
         $waitSeconds = $ladderMinutes * 60;
         if ($failure->retryAfterSeconds !== null && $failure->retryAfterSeconds > $waitSeconds) {
             $waitSeconds = $failure->retryAfterSeconds;
         }
 
+        // FR-018: rate limiting is a yield, not a connection failure. It does
+        // not advance the ladder and it never flags the connection — the
+        // provider is telling us to come back later, which says nothing about
+        // whether the connection is healthy. Counting it would let a busy
+        // instance talk itself into asking the user to reconnect a connection
+        // that was working the whole time.
         return new FailureResponse(
-            countsAsFailure: $countsAsFailure,
-            flagsImmediately: $flagsImmediately,
+            countsAsFailure: false,
+            flagsImmediately: false,
             clearsCursor: false,
             attemptsRenewal: false,
             nextAttemptAt: $now->addSeconds($waitSeconds),

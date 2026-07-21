@@ -99,7 +99,14 @@ final class GoogleHealthClient
             $params['pageToken'] = $pageToken;
         }
 
-        return $this->request($url, $params);
+        $result = $this->request($url, $params);
+
+        // request() names its payload 'dataPoints' for every endpoint; sessions
+        // are handed on under the key SessionTranslator's caller reads.
+        return [
+            'sessions'      => $result['dataPoints'],
+            'nextPageToken' => $result['nextPageToken'],
+        ];
     }
 
     /**

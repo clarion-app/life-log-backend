@@ -2,27 +2,19 @@
   "_comment": "Fixture: Sleep session - single night. Stamped v1, captured 2026-07-20.",
   "_api_version": "v1",
   "_capture_date": "2026-07-20",
-  "_endpoint": "GET /v1/users/{userId}/dataset:read",
-  "_data_type": "com.google.sleep.session",
-  "_description": "Single sleep session spanning 8 hours with sleep stages.",
-  "dataset": [
+  "_endpoint": "GET /v1/users/{userId}/sleepSessions:readList",
+  "_description": "Single sleep session spanning 8 hours.",
+  "sleepSessions": [
     {
-      "startTimeNanos": "1753003200000000000",
-      "endTimeNanos": "1753032000000000000",
-      "dataSourceId": "derived:com.google.sleep.segment:com.google.android.gms:sleep_asleep_night_clustering",
-      "totalPointCount": 1,
-      "minPointCount": 1,
-      "values": [
-        {
-          "mapVal": {
-            "fieldMap": {
-              "sleep_seconds": {
-                "intVal": 28800
-              }
-            }
-          }
-        }
-      ]
+      "dataType": "sleepSession",
+      "id": "sleep-1753003200",
+      "startedAtMs": 1753003200000,
+      "endedAtMs": 1753032000000,
+      "summaryValues": {
+        "asleepDuration": 28800,
+        "duration": 28800
+      }
     }
-  ]
+  ],
+  "nextPageToken": null
 }

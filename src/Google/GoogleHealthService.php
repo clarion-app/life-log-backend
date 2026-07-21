@@ -100,7 +100,18 @@ final class GoogleHealthService implements ExternalHealthService
     }
 
     /**
-     * @param  list<MeasurementType|SessionType>  $types  Types to fetch; required.
+     * Fetch exactly one page.
+     *
+     * One call issues one provider request. That is not an implementation
+     * detail: the engine reserves one unit of budget per fetch() and commits
+     * the returned cursor before asking for the next page, so a service that
+     * drained a window internally would spend N units against a reservation of
+     * one and would lose every page of progress to an interruption.
+     *
+     * With more than one type requested, the types are walked in order and the
+     * cursor names the type it left off in.
+     *
+     * @param  list<MeasurementType|SessionType>|null  $types  null means every supported type.
      *
      * @throws HealthServiceFailure
      */
@@ -111,162 +122,157 @@ final class GoogleHealthService implements ExternalHealthService
         ?PageCursor $cursor = null,
         ?array $types = null,
     ): ResultPage {
-        // Obligation 9: Honour $types exactly — no extra types returned
-        if ($types === null || empty($types)) {
-            $types = $this->supported;
+        if ($until->lt($since)) {
+            throw HealthServiceFailure::invalidRequest(
+                'The requested range ends before it starts.'
+            );
         }
 
-        $measurementTypes = [];
-        $sessionTypes = [];
+        // Obligation 9: honour $types exactly — no extra types returned.
+        $types = $types ?? $this->supported;
+        $types = array_values(array_filter(
+            $types,
+            fn ($type) => in_array($type, $this->supported, true),
+        ));
 
+        if ($types === []) {
+            return new ResultPage([], [], null);
+        }
+
+        // Obligation 8: a range wider than the declared limit is a caller bug.
+        // Rejecting it is the point — truncating would silently drop the part
+        // of the window the engine has already recorded as covered.
         foreach ($types as $type) {
-            if ($type instanceof MeasurementType) {
-                $measurementTypes[] = $type;
-            } elseif ($type instanceof SessionType) {
-                $sessionTypes[] = $type;
+            $limit = $this->maxWindow($type);
+
+            if ($limit !== null && $since->add($limit)->lt($until)) {
+                throw HealthServiceFailure::invalidRequest(
+                    'The requested range is wider than this type\'s maximum query window.'
+                );
             }
         }
 
-        // Restore GoogleCursor from PageCursor if present
-        $googleCursor = null;
+        // Resolve where in the type list this call resumes.
+        $index = 0;
+        $pageToken = null;
 
         if ($cursor !== null) {
             $googleCursor = GoogleCursor::fromPageCursor($cursor);
-        }
+            $index = $this->indexOfType($types, $googleCursor->type);
 
-        $accessToken = $this->oauthFlow->getAccessToken($userId);
+            // Obligation 9: paging is per (range, type-set). A cursor issued
+            // against a different window, or for a type this call did not ask
+            // for, is rejected rather than reinterpreted.
+            if ($index === null || !$googleCursor->matches($googleCursor->type, $since, $until)) {
+                throw HealthServiceFailure::invalidRequest(
+                    'This cursor was issued for a different range or type set.'
+                );
+            }
+
+            $pageToken = $googleCursor->pageToken;
+        }
 
         $client = new GoogleHealthClient(
             $this->httpClient ?? new Client(),
-            $accessToken,
+            $this->oauthFlow->getAccessToken($userId),
             AggregateSource::fromConfig(),
         );
 
-        $translator = new MeasurementTranslator();
-        $sessionTranslator = new SessionTranslator();
+        $type = $types[$index];
+        $measurements = [];
+        $sessions = [];
+        $nextPageToken = null;
 
-        $allMeasurements = [];
-        $allSessions = [];
-        $lastPageToken = null;
-
-        // Fetch measurements
-        foreach ($measurementTypes as $type) {
-            $pageToken = null;
-            $done = false;
-
-            // Use cursor's page token if it matches this type
-            if ($googleCursor !== null && $googleCursor->matches($type, $since, $until)) {
-                $pageToken = $googleCursor->pageToken();
-            }
-
-            while ($done === false) {
-                try {
-                    $result = $client->fetchMeasurements(
-                        $userId,
-                        $type,
-                        $since,
-                        $until,
-                        $pageToken,
-                    );
-                } catch (ScopeInsufficientException) {
-                    // This measurement type is not covered by the current
-                    // OAuth scope grant. Skip it — the sync stays healthy.
-                    $done = true;
-                    continue;
-                }
-
-                $translated = $translator->translate(
+        try {
+            if ($type instanceof MeasurementType) {
+                $result = $client->fetchMeasurements($userId, $type, $since, $until, $pageToken);
+                $measurements = (new MeasurementTranslator())->translate(
                     $result['dataPoints'],
                     $userId,
                     $this->unmappedRecorder,
                 );
-
-                $allMeasurements = array_merge($allMeasurements, $translated);
-
-                if ($result['nextPageToken'] === null) {
-                    $done = true;
-                } else {
-                    $pageToken = $result['nextPageToken'];
-                    $lastPageToken = $pageToken;
-                }
-            }
-        }
-
-        // Fetch sessions
-        foreach ($sessionTypes as $type) {
-            $pageToken = null;
-            $done = false;
-
-            if ($googleCursor !== null && $googleCursor->matches($type, $since, $until)) {
-                $pageToken = $googleCursor->pageToken();
-            }
-
-            while ($done === false) {
-                try {
-                    $result = $client->fetchSessions(
-                        $userId,
-                        $type,
-                        $since,
-                        $until,
-                        $pageToken,
-                    );
-                } catch (ScopeInsufficientException) {
-                    // This session type is not covered by the current
-                    // OAuth scope grant. Skip it — the sync stays healthy.
-                    $done = true;
-                    continue;
-                }
-
-                $translated = $sessionTranslator->translate(
+            } else {
+                $result = $client->fetchSessions($userId, $type, $since, $until, $pageToken);
+                $sessions = (new SessionTranslator())->translate(
                     $result['sessions'],
                     $userId,
                     $this->unmappedRecorder,
                 );
-
-                $allSessions = array_merge($allSessions, $translated);
-
-                if ($result['nextPageToken'] === null) {
-                    $done = true;
-                } else {
-                    $pageToken = $result['nextPageToken'];
-                    $lastPageToken = $pageToken;
-                }
             }
-        }
 
-        // nextCursor is null only at true exhaustion (no more data points)
-        $nextCursor = null;
-
-        if ($lastPageToken !== null) {
-            // Use the last measurement type for cursor context
-            $lastType = end($measurementTypes) ?? (end($sessionTypes) ?? null);
-
-            if ($lastType !== null) {
-                $nextCursor = GoogleCursor::create(
-                    $lastPageToken,
-                    $lastType,
-                    $since,
-                    $until,
-                )->toPageCursor();
-            }
+            $nextPageToken = $result['nextPageToken'];
+        } catch (ScopeInsufficientException) {
+            // This type is not covered by the current grant. Skip it — a
+            // narrowed grant is not a failure, and the remaining types still
+            // have to be walked, so the cursor advances past this one.
+            $nextPageToken = null;
         }
 
         return new ResultPage(
-            measurements: $allMeasurements,
-            sessions: $allSessions,
-            nextCursor: $nextCursor,
+            measurements: $measurements,
+            sessions: $sessions,
+            nextCursor: $this->nextCursor($types, $index, $type, $nextPageToken, $since, $until),
         );
+    }
+
+    /**
+     * Where the next page resumes: the same type when it has more pages, the
+     * next requested type when it does not, and null once the last type is
+     * exhausted — which is the only condition that ends the range.
+     *
+     * @param  list<MeasurementType|SessionType>  $types
+     */
+    private function nextCursor(
+        array $types,
+        int $index,
+        MeasurementType|SessionType $type,
+        ?string $nextPageToken,
+        CarbonImmutable $since,
+        CarbonImmutable $until,
+    ): ?PageCursor {
+        if ($nextPageToken !== null) {
+            return (new GoogleCursor($nextPageToken, $type, $since, $until))->toPageCursor();
+        }
+
+        if (!isset($types[$index + 1])) {
+            return null;
+        }
+
+        return (new GoogleCursor(null, $types[$index + 1], $since, $until))->toPageCursor();
+    }
+
+    /**
+     * Position of a type within the requested set, or null when absent.
+     *
+     * @param  list<MeasurementType|SessionType>  $types
+     */
+    private function indexOfType(array $types, MeasurementType|SessionType $type): ?int
+    {
+        foreach ($types as $index => $candidate) {
+            if ($candidate === $type) {
+                return $index;
+            }
+        }
+
+        return null;
     }
 
     public function renewAccess(string $userId): RenewalResult
     {
         try {
-            $tokens = $this->oauthFlow->refreshToken($userId);
+            $tokens = $this->oauthFlow->refreshToken(
+                $this->oauthFlow->getRefreshToken($userId),
+            );
 
             $expiresAt = null;
             if (isset($tokens['expires_in'])) {
                 $expiresAt = CarbonImmutable::now()->addSeconds($tokens['expires_in']);
             }
+
+            // RenewalResult carries no token, so the renewal is only durable
+            // if it is stored here — otherwise the next fetch presents the
+            // expired token again.
+            $this->oauthFlow->storeAccessToken($userId, $tokens['access_token'], $expiresAt);
 
             return RenewalResult::renewed($expiresAt);
         } catch (HealthServiceFailure $e) {

@@ -122,8 +122,12 @@ class GoogleRateLimitTest extends TestCase
     }
 
     /**
-     * Multiple rate limit failures increment consecutive_failures but
-     * do not trigger needs_attention.
+     * Rate limiting is a yield, not a connection failure (FR-018).
+     *
+     * It must not advance the backoff ladder: five rate limits in a row are
+     * five requests to come back later, and an instance busy enough to hit the
+     * quota five times would otherwise talk itself into asking the user to
+     * reconnect a connection that was healthy throughout.
      */
     #[\PHPUnit\Framework\Attributes\Test]
     public function repeatedRateLimitingDoesNotTriggerNeedsAttention(): void
@@ -144,15 +148,17 @@ class GoogleRateLimitTest extends TestCase
         $account->refresh();
         $this->assertEquals('normal', $account->sync_state);
 
-        // consecutive_failures incremented.
+        // The ladder never moved.
         $state = AccountSyncState::where('connected_account_id', $account->id)->first();
         $this->assertNotNull($state);
-        $this->assertEquals(5, $state->consecutive_failures);
+        $this->assertEquals(0, $state->consecutive_failures);
         $this->assertNull($state->needs_attention_reason);
+        $this->assertNotNull($state->next_attempt_at);
     }
 
     /**
-     * A successful run after rate limiting resets consecutive_failures.
+     * A rate limit leaves the ladder where it was, and a later success keeps
+     * it there and clears the deferral.
      */
     #[\PHPUnit\Framework\Attributes\Test]
     public function successAfterRateLimitingResetsFailures(): void
@@ -169,7 +175,7 @@ class GoogleRateLimitTest extends TestCase
 
         $state = AccountSyncState::where('connected_account_id', $account->id)->first();
         $this->assertNotNull($state);
-        $this->assertEquals(1, $state->consecutive_failures);
+        $this->assertEquals(0, $state->consecutive_failures);
 
         // Second: success.
         $service2 = ScriptedSyncService::withPages([

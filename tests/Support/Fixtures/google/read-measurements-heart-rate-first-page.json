@@ -2,30 +2,32 @@
   "_comment": "Fixture: Heart rate intraday list - first page. Stamped v1, captured 2026-07-20.",
   "_api_version": "v1",
   "_capture_date": "2026-07-20",
-  "_endpoint": "GET /v1/users/{userId}/data/heart_rate_bpm:read",
+  "_endpoint": "GET /v1/users/{userId}/dataTypes/heartRateBpm:readList",
   "_description": "First page of heart rate BPM measurements. Note: 14-day max window for this type.",
   "dataset": [
     {
-      "startTimeNanos": "1753017600000000000",
-      "endTimeNanos": "1753017600000000000",
-      "dataSourceId": "derived:com.google.heart_rate.bpm:com.google.android.gms:merge_heart_rate_bpm",
-      "totalPointCount": 1,
-      "minPointCount": 1,
-      "values": [
+      "point": [
         {
-          "fpVal": 72.5
-        }
-      ]
-    },
-    {
-      "startTimeNanos": "1753017660000000000",
-      "endTimeNanos": "1753017660000000000",
-      "dataSourceId": "derived:com.google.heart_rate.bpm:com.google.android.gms:merge_heart_rate_bpm",
-      "totalPointCount": 1,
-      "minPointCount": 1,
-      "values": [
+          "dataType": "heartRateBpm",
+          "startedAtMs": 1753017600000,
+          "endedAtMs": 1753017600000,
+          "value": [
+            {
+              "fpVal": 72.5
+            }
+          ],
+          "unit": "bpm"
+        },
         {
-          "fpVal": 74.0
+          "dataType": "heartRateBpm",
+          "startedAtMs": 1753017660000,
+          "endedAtMs": 1753017660000,
+          "value": [
+            {
+              "fpVal": 74.0
+            }
+          ],
+          "unit": "bpm"
         }
       ]
     }

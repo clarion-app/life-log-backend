@@ -7,6 +7,7 @@ use ClarionApp\LifeLogBackend\Models\MeasurementRollupQueue;
 use ClarionApp\LifeLogBackend\Models\MeasurementTypeClassification;
 use ClarionApp\LifeLogBackend\Services\RawMeasurementWriter;
 use Tests\TestCase;
+use Carbon\CarbonImmutable;
 
 /**
  * Scale verification: The rollup queue grows with hour count, not row count.
@@ -54,12 +55,13 @@ class RollupQueueScaleTest extends TestCase
                         'type' => 'steps',
                         'value' => 10.0 + $i,
                         'unit' => 'count',
-                        'recorded_at' => sprintf(
-                            '2026-04-%02d %02d:%02d:00 UTC',
-                            1 + floor(($day + $hour / 24.0)),
-                            $hour,
-                            $minute,
-                        ),
+                        // Real date arithmetic, not a hand-built day-of-month:
+                        // a 90-day span rolls over every month boundary it
+                        // crosses, and "2026-04-32" is not a date.
+                        'recorded_at' => CarbonImmutable::parse('2026-04-01 00:00:00', 'UTC')
+                            ->addDays($day)
+                            ->addHours($hour)
+                            ->addMinutes((int) $minute),
                     ];
                 }
             }
@@ -125,7 +127,10 @@ class RollupQueueScaleTest extends TestCase
                 'type' => 'steps',
                 'value' => 10.0 + $i,
                 'unit' => 'count',
-                'recorded_at' => sprintf('2026-07-19 09:%02d:00 UTC', $i % 60),
+                // Distinct instants inside one hour. Reusing a minute would
+                // collide on the dedup key and test dedup, not queue growth.
+                'recorded_at' => CarbonImmutable::parse('2026-07-19 09:00:00', 'UTC')
+                    ->addSeconds($i * 30),
             ];
         }
 

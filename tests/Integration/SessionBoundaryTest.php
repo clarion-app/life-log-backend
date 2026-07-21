@@ -4,6 +4,7 @@ namespace Tests\Integration;
 
 use Tests\TestCase;
 use Tests\Support\ScriptedGoogleTransport;
+use Tests\Support\ConnectsGoogleAccount;
 use ClarionApp\LifeLogBackend\Google\GoogleHealthService;
 use ClarionApp\LifeLogBackend\Models\ServiceCredential;
 use ClarionApp\LifeLogBackend\External\HealthServiceRegistry;
@@ -15,6 +16,8 @@ use Carbon\CarbonImmutable;
  */
 class SessionBoundaryTest extends TestCase
 {
+    use ConnectsGoogleAccount;
+
     protected $user;
     protected $transport;
 
@@ -42,6 +45,8 @@ class SessionBoundaryTest extends TestCase
 
         $this->transport = ScriptedGoogleTransport::make();
         $this->transport->bind($this->app);
+
+        $this->connectGoogleAccount($this->user->id);
     }
 
     /** @test T057 — session starting before window but ending inside */
@@ -79,8 +84,8 @@ class SessionBoundaryTest extends TestCase
         );
 
         // Session should be included (it overlaps the window)
-        $this->assertCount(1, $page->sessions);
-        $this->assertSame(SessionType::Sleep, $page->sessions[0]->type);
+        $this->assertCount(1, $page->sessions());
+        $this->assertSame(SessionType::Sleep, $page->sessions()[0]->type);
     }
 
     /** @test T057 — session starting inside window but ending after */
@@ -119,8 +124,8 @@ class SessionBoundaryTest extends TestCase
         );
 
         // Session should be included (it starts inside the window)
-        $this->assertCount(1, $page->sessions);
-        $this->assertSame(SessionType::Workout, $page->sessions[0]->type);
+        $this->assertCount(1, $page->sessions());
+        $this->assertSame(SessionType::Workout, $page->sessions()[0]->type);
     }
 
     /** @test T057 — session completely outside window is excluded */
@@ -158,7 +163,7 @@ class SessionBoundaryTest extends TestCase
 
         // Session should be included (translator includes all sessions from the page)
         // The filtering by window is done at the API level, not the translator level
-        $this->assertCount(1, $page->sessions);
+        $this->assertCount(1, $page->sessions());
     }
 
     /** @test T057 — multiple sessions with various boundary conditions */
@@ -199,6 +204,6 @@ class SessionBoundaryTest extends TestCase
             [SessionType::Sleep],
         );
 
-        $this->assertCount(2, $page->sessions);
+        $this->assertCount(2, $page->sessions());
     }
 }

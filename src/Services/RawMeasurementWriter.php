@@ -56,6 +56,12 @@ class RawMeasurementWriter
                 'recorded_at' => $recordedAt,
                 'bucket_hour' => $bucketHour,
                 'metadata' => isset($reading['metadata']) ? json_encode($reading['metadata']) : null,
+                // A write is unpromoted by definition, and on the update side
+                // this is what makes a correction re-promote: without clearing
+                // it, a corrected Direct-mode reading keeps the promoted_at of
+                // the value it replaced and the bridged metric keeps the old
+                // number forever (FR-026).
+                'promoted_at' => null,
             ];
 
             // Track dirty bucket for queue marking — only Rollup-mode types
@@ -76,7 +82,8 @@ class RawMeasurementWriter
 
         // Bulk upsert — bypasses events, no bridge overhead (research.md §4)
         RawMeasurement::upsert($rows, ['external_service', 'external_id'], [
-            'user_id', 'type', 'value', 'unit', 'recorded_at', 'bucket_hour', 'metadata', 'updated_at',
+            'user_id', 'type', 'value', 'unit', 'recorded_at', 'bucket_hour', 'metadata',
+            'promoted_at', 'updated_at',
         ]);
 
         // Mark dirty hours — upsert one queue row per distinct bucket (plan D3)

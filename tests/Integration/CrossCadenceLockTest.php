@@ -79,7 +79,7 @@ class CrossCadenceLockTest extends TestCase
 
         // Acquire the lock manually (simulating backfill holding it)
         $lock = app(SyncLock::class);
-        $lockResult = $lock->attempt($account->id, function () use ($backfillRunner, $account) {
+        $lockResult = $lock->attempt($account->id, function () use ($syncRunner, $account) {
             // While holding the lock, try incremental sync
             $syncResult = $syncRunner->run($account, SyncTrigger::Scheduled);
             return $syncResult;

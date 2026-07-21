@@ -262,10 +262,18 @@ abstract class HealthServiceConformanceTestCase extends TestCase
         $service = $this->service();
         $secret = 'sk_test_4eC39HqLyjWDarjtT1zdp7dc';
 
-        // The service may or may not have a way to fail completeConnection.
-        // If it does, the message must not leak sensitive values.
+        // A service that accepts any code has nothing to leak here, so record
+        // that rather than leaving the test silently assertion-free — a test
+        // that can pass without asserting anything cannot distinguish "nothing
+        // to check" from "the check stopped running".
         try {
-            $service->completeConnection(self::USER, 'bogus-code', 'https://example.com/callback');
+            $grant = $service->completeConnection(self::USER, 'bogus-code', 'https://example.com/callback');
+
+            $this->assertInstanceOf(
+                AuthorizationGrant::class,
+                $grant,
+                'completeConnection either returns a grant or raises HealthServiceFailure.',
+            );
         } catch (HealthServiceFailure $e) {
             $message = $e->getMessage();
 
@@ -377,6 +385,146 @@ abstract class HealthServiceConformanceTestCase extends TestCase
         try {
             $this->service()->fetch(self::USER, $this->until(), $this->since());
             $this->fail('until < since must raise, not return an empty page.');
+        } catch (HealthServiceFailure $e) {
+            $this->assertSame(FailureKind::InvalidRequest, $e->kind);
+        }
+    }
+
+    // ------------------------------- 058: window limits and the type filter
+
+    /**
+     * @test  maxWindow() answers for every type the service says it supports
+     *
+     * The engine plans every fetch window against this. A type that throws, or
+     * that the service will not answer for, cannot be planned for at all — the
+     * failure surfaces as a crash mid-run rather than as a contract violation.
+     */
+    public function itDeclaresAMaxWindowForEverySupportedType(): void
+    {
+        $service = $this->service();
+        $types = $service->supportedTypes();
+
+        $this->assertNotEmpty($types, 'A service with no supported types has nothing to plan.');
+
+        foreach ($types as $type) {
+            $window = $service->maxWindow($type);
+
+            $this->assertTrue(
+                $window === null || $window instanceof \DateInterval,
+                sprintf('maxWindow(%s) returned neither null nor a DateInterval.', $type->value),
+            );
+        }
+    }
+
+    /**
+     * @test  a range wider than the declared limit is rejected, not truncated
+     *
+     * Truncation is the dangerous answer: the engine records the window it
+     * asked for as covered, so silently serving a narrower one leaves a gap
+     * nothing will ever go back for. Rejection fails a test instead.
+     */
+    public function itRejectsARangeWiderThanItsDeclaredMaxWindow(): void
+    {
+        $service = $this->service();
+        $limited = null;
+
+        foreach ($service->supportedTypes() as $type) {
+            if ($service->maxWindow($type) !== null) {
+                $limited = $type;
+                break;
+            }
+        }
+
+        if ($limited === null) {
+            // A service that declares no limits cannot violate one.
+            $this->assertTrue(true);
+
+            return;
+        }
+
+        $since = $this->since();
+        $until = $since->add($service->maxWindow($limited))->addDay();
+
+        try {
+            $service->fetch(self::USER, $since, $until, null, [$limited]);
+            $this->fail('A range wider than maxWindow() must raise, not be quietly narrowed.');
+        } catch (HealthServiceFailure $e) {
+            $this->assertSame(FailureKind::InvalidRequest, $e->kind);
+        }
+    }
+
+    /** @test  a single-type filter returns that type and nothing else */
+    public function itRestrictsResultsToTheRequestedTypes(): void
+    {
+        $service = $this->service();
+
+        foreach ($service->supportedTypes() as $type) {
+            $page = $service->fetch(self::USER, $this->since(), $this->until(), null, [$type]);
+
+            foreach ($page->measurements() as $measurement) {
+                $this->assertSame(
+                    $type,
+                    $measurement->type,
+                    'A type the caller did not ask for makes per-type backfill boundaries meaningless: '
+                    . 'a boundary would claim coverage of a type the run never walked.',
+                );
+            }
+
+            foreach ($page->sessions() as $session) {
+                $this->assertSame($type, $session->type);
+            }
+        }
+    }
+
+    /** @test  a null type filter still means "everything supported" (pre-058 callers) */
+    public function itTreatsANullTypeFilterAsEverySupportedType(): void
+    {
+        $service = $this->service();
+        $supported = $service->supportedTypes();
+
+        $page = $service->fetch(self::USER, $this->since(), $this->until(), null, null);
+
+        foreach ($page->measurements() as $measurement) {
+            $this->assertContains($measurement->type, $supported);
+        }
+
+        foreach ($page->sessions() as $session) {
+            $this->assertContains($session->type, $supported);
+        }
+    }
+
+    /**
+     * @test  a cursor issued for one type set is not honoured under another
+     *
+     * Paging is per (range, type-set). Reinterpreting a cursor across type sets
+     * resumes at a position that means something different from what it meant
+     * when it was issued, and the resulting gap looks exactly like the user
+     * having no data.
+     */
+    public function itDoesNotHonourACursorAcrossTypeSets(): void
+    {
+        $service = $this->service();
+        $types = $service->supportedTypes();
+
+        if (count($types) < 2) {
+            // One type is only ever one type set.
+            $this->assertTrue(true);
+
+            return;
+        }
+
+        $first = $service->fetch(self::USER, $this->since(), $this->until(), null, [$types[0]]);
+        $cursor = $first->nextCursor();
+
+        if ($cursor === null) {
+            $this->assertTrue(true);
+
+            return;
+        }
+
+        try {
+            $service->fetch(self::USER, $this->since(), $this->until(), $cursor, [$types[1]]);
+            $this->fail('A cursor from one type set must not be honoured under another.');
         } catch (HealthServiceFailure $e) {
             $this->assertSame(FailureKind::InvalidRequest, $e->kind);
         }

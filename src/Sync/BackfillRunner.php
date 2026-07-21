@@ -285,6 +285,7 @@ final class BackfillRunner
         $measurementsWritten = 0;
         $sessionsWritten = 0;
         $cursor = null;
+        $windowExhausted = false;
 
         // Page loop
         while (true) {
@@ -293,8 +294,11 @@ final class BackfillRunner
                 break;
             }
 
-            // Check page cap
-            if ($totalPages >= $this->maxPages) {
+            // Check page cap. $totalPages only takes this type's pages once the
+            // type is finished, so the pages fetched so far in this loop have
+            // to be counted here too — otherwise the cap can never fire inside
+            // a single type, which is exactly where an unbounded walk happens.
+            if ($totalPages + $pagesFetched >= $this->maxPages) {
                 break;
             }
 
@@ -366,6 +370,7 @@ final class BackfillRunner
                 $backfillState->backfilled_to = $window->since;
                 $backfillState->cursor = null;
                 $backfillState->save();
+                $windowExhausted = true;
                 break;
             }
 
@@ -380,6 +385,7 @@ final class BackfillRunner
             pagesFetched: $pagesFetched,
             measurementsWritten: $measurementsWritten,
             sessionsWritten: $sessionsWritten,
+            windowExhausted: $windowExhausted,
         );
     }
 
@@ -405,10 +411,12 @@ final class BackfillRunner
             return SyncOutcome::Success;
         }
 
-        // Any processed type that is not completed → Partial
-        // This covers budget denial (pagesFetched=0, completed=false) and partial pages
+        // A type whose window was cut short — by budget denial, the page cap,
+        // or the per-run cap — leaves work pending, which is Partial. A window
+        // walked to exhaustion is a full run's work, whether or not the type
+        // still has older history to walk on the next tick.
         foreach ($processed as $outcome) {
-            if (!$outcome->completed) {
+            if (!$outcome->windowExhausted) {
                 return SyncOutcome::Partial;
             }
         }

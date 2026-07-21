@@ -114,13 +114,14 @@ final class FakeSpanService implements ExternalHealthService
             );
         }
 
-        $page = $this->pageIndexFrom($cursor);
         $total = $this->measurementCount + $this->sessionCount;
 
         // Build type filter set if provided
         $typeFilter = $types !== null
             ? array_map(fn ($t) => $t->value, $types)
             : null;
+
+        $page = $this->pageIndexFrom($cursor, $typeFilter);
 
         // A sparse page consumes no items; the data page index therefore skips
         // over every sparse page that came before this one.
@@ -166,7 +167,7 @@ final class FakeSpanService implements ExternalHealthService
 
         $more = $consumed < $total || in_array($page + 1, $this->sparsePages, true);
 
-        return new ResultPage($measurements, $sessions, $more ? $this->tokenFor($page + 1) : null);
+        return new ResultPage($measurements, $sessions, $more ? $this->tokenFor($page + 1, $typeFilter) : null);
     }
 
     public function renewAccess(string $userId): RenewalResult
@@ -242,16 +243,29 @@ final class FakeSpanService implements ExternalHealthService
         };
     }
 
-    private function tokenFor(int $page): PageCursor
+    /**
+     * @param  list<string>|null  $typeFilter
+     */
+    private function tokenFor(int $page, ?array $typeFilter): PageCursor
     {
         // Opaque to the caller by construction — a continuation token, not a
-        // position it could compute for itself.
+        // position it could compute for itself. It carries the type set it was
+        // issued under so replaying it against a different one is detectable
+        // rather than silently resuming at a position that now means something
+        // else (implementer obligation 9).
         return PageCursor::fromString(
-            base64_encode(json_encode(['p' => $page, 'g' => $this->generation], JSON_THROW_ON_ERROR))
+            base64_encode(json_encode([
+                'p' => $page,
+                'g' => $this->generation,
+                't' => self::typeKey($typeFilter),
+            ], JSON_THROW_ON_ERROR))
         );
     }
 
-    private function pageIndexFrom(?PageCursor $cursor): int
+    /**
+     * @param  list<string>|null  $typeFilter
+     */
+    private function pageIndexFrom(?PageCursor $cursor, ?array $typeFilter): int
     {
         if ($cursor === null) {
             return 0;
@@ -263,7 +277,30 @@ final class FakeSpanService implements ExternalHealthService
             throw HealthServiceFailure::invalidRequest('span: continuation token is stale');
         }
 
+        if (($decoded['t'] ?? null) !== self::typeKey($typeFilter)) {
+            throw HealthServiceFailure::invalidRequest(
+                'span: continuation token was issued for a different type set'
+            );
+        }
+
         return (int) ($decoded['p'] ?? 0);
+    }
+
+    /**
+     * A stable key for a type set, order-independent.
+     *
+     * @param  list<string>|null  $typeFilter
+     */
+    private static function typeKey(?array $typeFilter): string
+    {
+        if ($typeFilter === null) {
+            return '*';
+        }
+
+        $values = $typeFilter;
+        sort($values);
+
+        return implode(',', $values);
     }
 
     /**

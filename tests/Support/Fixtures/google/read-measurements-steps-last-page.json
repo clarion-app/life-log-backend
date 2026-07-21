@@ -2,20 +2,24 @@
   "_comment": "Fixture: Steps intraday list - last page (exhausted). Stamped v1, captured 2026-07-20.",
   "_api_version": "v1",
   "_capture_date": "2026-07-20",
-  "_endpoint": "GET /v1/users/{userId}/data/steps:read",
-  "_description": "Last page of step count measurements with no nextPageToken (exhausted).",
+  "_endpoint": "GET /v1/users/{userId}/dataTypes/stepCount:readList",
+  "_description": "Last page of step count measurements, no nextPageToken (exhausted).",
   "dataset": [
     {
-      "startTimeNanos": "1753104000000000000",
-      "endTimeNanos": "1753104000000000000",
-      "dataSourceId": "derived:com.google.step_count.delta:com.google.android.gms:estimated_steps",
-      "totalPointCount": 1,
-      "minPointCount": 1,
-      "values": [
+      "point": [
         {
-          "intVal": 3100
+          "dataType": "stepCount",
+          "startedAtMs": 1753017720000,
+          "endedAtMs": 1753017780000,
+          "value": [
+            {
+              "intVal": 40
+            }
+          ],
+          "unit": "steps"
         }
       ]
     }
-  ]
+  ],
+  "nextPageToken": null
 }

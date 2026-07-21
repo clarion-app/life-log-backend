@@ -100,10 +100,10 @@ final class MeasurementTranslator
         }
 
         // Step 2: Convert value to canonical unit
-        $rawValue = $dp['value'] ?? null;
+        $rawValue = self::scalarValue($dp['value'] ?? null);
         $sourceUnit = $dp['unit'] ?? null;
 
-        if ($rawValue === null || $sourceUnit === null) {
+        if ($rawValue === null || !is_string($sourceUnit)) {
             $unmappedRecorder->record(
                 self::SERVICE,
                 $dataType,
@@ -114,10 +114,21 @@ final class MeasurementTranslator
             return null;
         }
 
+        // The provider's spelling of the unit, resolved onto one this
+        // integration accepts. An unrecognised pairing is recorded and
+        // skipped rather than guessed at (FR-011).
+        $normalisedUnit = UnitMap::normaliseSource($dataType, $sourceUnit);
+
+        if ($normalisedUnit === null) {
+            $unmappedRecorder->record(self::SERVICE, $dataType, (string) $rawValue, $sourceUnit);
+
+            return null;
+        }
+
         try {
             $value = $converter->toCanonical(
                 (string) $rawValue,
-                $sourceUnit,
+                $normalisedUnit,
                 $vocabularyType,
             );
         } catch (\Throwable) {
@@ -131,8 +142,13 @@ final class MeasurementTranslator
             return null;
         }
 
-        // Step 3: Validate timestamp
-        $timestampMs = $dp['timestampMs'] ?? $dp['timestamp'] ?? null;
+        // Step 3: Validate timestamp. A point is stamped at its start — the
+        // instant the external id is derived from, so this choice is what
+        // makes a corrected reading collide with the row it corrects.
+        $timestampMs = $dp['startedAtMs']
+            ?? $dp['timestampMs']
+            ?? $dp['timestamp']
+            ?? null;
 
         if ($timestampMs === null) {
             $unmappedRecorder->record(
@@ -177,5 +193,44 @@ final class MeasurementTranslator
             externalId: $externalId,
             externalService: self::SERVICE,
         );
+    }
+
+    /**
+     * The scalar reading out of a point's `value`.
+     *
+     * Google wraps a point's value in a list of typed cells (`intVal`,
+     * `fpVal`) rather than serving a bare number. Casting that list to string
+     * yields "Array", which fails conversion and drops the reading — so the
+     * unwrapping happens here, once, instead of in every caller.
+     *
+     * @return scalar|null null when there is no usable reading
+     */
+    private static function scalarValue(mixed $raw): string|int|float|bool|null
+    {
+        if (is_scalar($raw)) {
+            return $raw;
+        }
+
+        if (!is_array($raw)) {
+            return null;
+        }
+
+        $cell = $raw[0] ?? $raw;
+
+        if (is_scalar($cell)) {
+            return $cell;
+        }
+
+        if (!is_array($cell)) {
+            return null;
+        }
+
+        foreach (['intVal', 'fpVal', 'value'] as $key) {
+            if (isset($cell[$key]) && is_scalar($cell[$key])) {
+                return $cell[$key];
+            }
+        }
+
+        return null;
     }
 }

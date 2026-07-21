@@ -19,19 +19,25 @@ use InvalidArgumentException;
 final readonly class GoogleCursor
 {
     /**
-     * @param  string  $pageToken  Google's opaque page token
+     * @param  string|null  $pageToken  Google's opaque page token, or null to mean
+     *         "the first page of $type" — the position a multi-type fetch resumes
+     *         from once the preceding type has been exhausted. Distinct from a
+     *         null PageCursor, which means "the first page of the whole request".
      * @param  MeasurementType|SessionType  $type  The data type this cursor was issued for
      * @param  CarbonImmutable  $since  Window start this cursor was issued for
      * @param  CarbonImmutable  $until  Window end this cursor was issued for
      */
     public function __construct(
-        public string $pageToken,
+        public ?string $pageToken,
         public MeasurementType|SessionType $type,
         public CarbonImmutable $since,
         public CarbonImmutable $until,
     ) {
         if ($this->pageToken === '') {
-            throw new InvalidArgumentException('GoogleCursor pageToken cannot be empty.');
+            throw new InvalidArgumentException(
+                'GoogleCursor pageToken cannot be the empty string — use null for '
+                . 'the first page of a type.'
+            );
         }
     }
 
@@ -65,8 +71,8 @@ final readonly class GoogleCursor
         $sinceIso  = $parts['since'] ?? null;
         $untilIso  = $parts['until'] ?? null;
 
-        if ($pageToken === null || !is_string($pageToken) || $pageToken === '') {
-            throw new InvalidArgumentException('Cursor missing pageToken.');
+        if ($pageToken !== null && (!is_string($pageToken) || $pageToken === '')) {
+            throw new InvalidArgumentException('Cursor carries a malformed pageToken.');
         }
 
         if ($typeValue === null || !is_string($typeValue)) {

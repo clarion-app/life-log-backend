@@ -1,21 +1,47 @@
 {
-  "_comment": "Fixture: Reconciled heart rate with per-device dedup. Stamped v1, captured 2026-07-20.",
+  "_comment": "Fixture: Reconciled heart rate. Stamped v1, captured 2026-07-20.",
   "_api_version": "v1",
   "_capture_date": "2026-07-20",
-  "_endpoint": "GET /v1/users/{userId}/data/heart_rate_bpm:read",
-  "_description": "Reconciled series showing one reading per instant despite multiple sources. life-log consumes the reconciled view only (FR-009).",
+  "_endpoint": "GET /v1/users/{userId}/dataTypes/heartRateBpm:readList",
+  "_description": "Reconciled series: one reading per instant despite multiple sources. life-log consumes the reconciled view only (FR-009).",
   "dataset": [
     {
-      "startTimeNanos": "1753017600000000000",
-      "endTimeNanos": "1753017600000000000",
-      "dataSourceId": "derived:com.google.heart_rate.bpm:com.google.android.gms:merge_heart_rate_bpm",
-      "totalPointCount": 1,
-      "minPointCount": 1,
-      "values": [
+      "point": [
         {
-          "fpVal": 72.5
+          "dataType": "heartRateBpm",
+          "startedAtMs": 1753017600000,
+          "endedAtMs": 1753017600000,
+          "value": [
+            {
+              "fpVal": 72.0
+            }
+          ],
+          "unit": "bpm"
+        },
+        {
+          "dataType": "heartRateBpm",
+          "startedAtMs": 1753017605000,
+          "endedAtMs": 1753017605000,
+          "value": [
+            {
+              "fpVal": 73.0
+            }
+          ],
+          "unit": "bpm"
+        },
+        {
+          "dataType": "heartRateBpm",
+          "startedAtMs": 1753017610000,
+          "endedAtMs": 1753017610000,
+          "value": [
+            {
+              "fpVal": 71.0
+            }
+          ],
+          "unit": "bpm"
         }
       ]
     }
-  ]
+  ],
+  "nextPageToken": null
 }

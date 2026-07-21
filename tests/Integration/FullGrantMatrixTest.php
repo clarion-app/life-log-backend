@@ -163,9 +163,23 @@ class FullGrantMatrixTest extends TestCase
             'expires_at' => CarbonImmutable::now()->addHours(1),
         ]);
 
-        // Second sync — new data arrives, old data is retained
-        $service2 = ScriptedSyncService::withPages([
-            ['measurements' => 1, 'sessions' => 0],
+        // Second sync — a genuinely new reading. Its external id has to differ
+        // from the first batch's: withPages() issues ids by page and offset, so
+        // reusing it would upsert over the earlier rows and the count could not
+        // move whether data was retained or not.
+        $service2 = ScriptedSyncService::emitting([
+            new \ClarionApp\LifeLogBackend\External\ResultPage(
+                [\ClarionApp\LifeLogBackend\External\TranslatedMeasurement::make(
+                    userId: 'test-user',
+                    type: \ClarionApp\LifeLogBackend\Vocabulary\MeasurementType::Steps,
+                    value: '4200',
+                    recordedAt: CarbonImmutable::now()->subMinutes(5),
+                    externalId: 'after-reconnect-1',
+                    externalService: ScriptedSyncService::NAME,
+                )],
+                [],
+                null,
+            ),
         ]);
         $runner2 = $this->makeRunnerWithService($service2);
         $runner2->run($account, SyncTrigger::OnDemand);
@@ -247,28 +261,73 @@ class FullGrantMatrixTest extends TestCase
     }
 
     /**
-     * Matrix row: "CredentialsRejected marks needs_attention with credential_rotated."
-     * When the provider rejects our client credentials, it's a credential issue.
+     * Matrix row: "CredentialsRejected under a rotated credential."
+     *
+     * A rejection on its own is an ordinary failure and takes the ladder — the
+     * secret may simply be wrong, and retrying is cheap. A rejection against an
+     * authorization granted under an *older* credential version is different:
+     * the secret was replaced out from under this connection, which a version
+     * comparison already knows on the first attempt. That skips the ladder and
+     * names the reason, rather than surfacing it ~13 hours later (057).
      */
     #[\PHPUnit\Framework\Attributes\Test]
-    public function credentialsRejectedMarksNeedsAttention(): void
+    public function credentialsRejectedUnderRotatedCredentialMarksNeedsAttention(): void
     {
         $account = $this->makeAccount();
-        $this->makeAuthorization($account);
+        $this->makeAuthorization($account);   // credential_version 1
 
-        // Service throws CredentialsRejected — terminal, needs attention
+        // The stored credential has since been rotated to version 2.
+        \ClarionApp\LifeLogBackend\Models\ServiceCredential::create([
+            'external_service' => ScriptedSyncService::NAME,
+            'client_id' => 'rotated-client-id',
+            'client_secret' => 'rotated-client-secret',
+            'redirect_uri' => 'https://example.com/callback',
+            'version' => 2,
+        ]);
+
         $service = ScriptedSyncService::emitting([]);
         $service->throwCredentialsRejectedOn(1);
 
         $runner = $this->makeRunnerWithService($service);
         $runner->run($account, SyncTrigger::Scheduled);
 
-        // Account is flagged for needs_attention
         $account->refresh();
         $this->assertEquals('needs_attention', $account->sync_state);
 
         $state = AccountSyncState::where('connected_account_id', $account->id)->first();
         $this->assertNotNull($state);
         $this->assertEquals('credential_rotated', $state->needs_attention_reason);
+    }
+
+    /**
+     * Matrix row: the same rejection with the credential version still current
+     * takes the backoff ladder instead of flagging on the first attempt.
+     */
+    #[\PHPUnit\Framework\Attributes\Test]
+    public function credentialsRejectedOnCurrentVersionTakesTheLadder(): void
+    {
+        $account = $this->makeAccount();
+        $this->makeAuthorization($account);
+
+        \ClarionApp\LifeLogBackend\Models\ServiceCredential::create([
+            'external_service' => ScriptedSyncService::NAME,
+            'client_id' => 'current-client-id',
+            'client_secret' => 'current-client-secret',
+            'redirect_uri' => 'https://example.com/callback',
+            'version' => 1,
+        ]);
+
+        $service = ScriptedSyncService::emitting([]);
+        $service->throwCredentialsRejectedOn(1);
+
+        $runner = $this->makeRunnerWithService($service);
+        $runner->run($account, SyncTrigger::Scheduled);
+
+        $account->refresh();
+        $this->assertNotEquals('needs_attention', $account->sync_state);
+
+        $state = AccountSyncState::where('connected_account_id', $account->id)->first();
+        $this->assertSame(1, $state->consecutive_failures);
+        $this->assertNotNull($state->next_attempt_at);
     }
 }

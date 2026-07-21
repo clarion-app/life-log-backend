@@ -75,6 +75,42 @@ class GoogleReconnectRestoresTest extends TestCase
         );
     }
 
+
+    /**
+     * Reconnect the way the callback does.
+     *
+     * The service only exchanges the code — persisting the grant, stamping the
+     * credential version and resetting sync health is ConnectionCompleter's
+     * job (057). Calling completeConnection() directly exercises the fake and
+     * none of the behaviour these tests are about.
+     */
+    private function reconnect(ScriptedSyncService $service, string $accessToken = 'new-access-token'): void
+    {
+        \ClarionApp\LifeLogBackend\Models\ServiceCredential::firstOrCreate(
+            ['external_service' => ScriptedSyncService::NAME],
+            [
+                'client_id' => 'scripted-client-id',
+                'client_secret' => 'scripted-client-secret',
+                'redirect_uri' => 'http://localhost/callback',
+                'version' => 2,
+            ],
+        );
+
+        $service->completeConnectionWith(new AuthorizationGrant(
+            accessToken: $accessToken,
+            refreshToken: 'new-refresh-token',
+            expiresAt: CarbonImmutable::now()->addHours(8),
+        ));
+
+        app(\ClarionApp\LifeLogBackend\Connection\ConnectionCompleter::class)->complete(
+            'reconnect-user',
+            ScriptedSyncService::NAME,
+            'auth-code',
+            'http://localhost/callback',
+            $service,
+        );
+    }
+
     /**
      * Completing the OAuth flow again for a needs_attention account
      * clears the attention state and restores the connection.
@@ -96,20 +132,7 @@ class GoogleReconnectRestoresTest extends TestCase
 
         // Complete the connection again (simulates re-authorizing).
         $service = ScriptedSyncService::emitting([]);
-        $grant = new AuthorizationGrant(
-            accessToken: 'new-access-token',
-            refreshToken: 'new-refresh-token',
-            expiresAt: CarbonImmutable::now()->addHours(8),
-        );
-        $service->completeConnectionWith($grant);
-
-        $registry = new HealthServiceRegistry();
-        $registry->register(ScriptedSyncService::NAME, fn () => $service);
-
-        $result = $service->completeConnection('reconnect-user', 'auth-code', 'http://localhost/callback');
-
-        // The grant was exchanged successfully.
-        $this->assertEquals('new-access-token', $result->accessToken);
+        $this->reconnect($service);
 
         // Authorization was updated with new tokens.
         $auth = AccountAuthorization::where('connected_account_id', $account->id)->first();
@@ -150,13 +173,7 @@ class GoogleReconnectRestoresTest extends TestCase
 
         // Reconnect.
         $service = ScriptedSyncService::emitting([]);
-        $grant = new AuthorizationGrant(
-            accessToken: 'new-access-token',
-            refreshToken: 'new-refresh-token',
-            expiresAt: CarbonImmutable::now()->addHours(8),
-        );
-        $service->completeConnectionWith($grant);
-        $service->completeConnection('reconnect-user', 'auth-code', 'http://localhost/callback');
+        $this->reconnect($service);
 
         // Cursor is cleared on reconnect (sync starts fresh from cursor).
         // But the synced_through_at timestamp is preserved (data is retained).
@@ -181,13 +198,7 @@ class GoogleReconnectRestoresTest extends TestCase
         $service = ScriptedSyncService::withPages([
             ['measurements' => 1, 'sessions' => 0],
         ]);
-        $grant = new AuthorizationGrant(
-            accessToken: 'new-access-token',
-            refreshToken: 'new-refresh-token',
-            expiresAt: CarbonImmutable::now()->addHours(8),
-        );
-        $service->completeConnectionWith($grant);
-        $service->completeConnection('reconnect-user', 'auth-code', 'http://localhost/callback');
+        $this->reconnect($service);
 
         // Run sync — should succeed with new tokens.
         $runner = $this->makeRunnerWithService($service);

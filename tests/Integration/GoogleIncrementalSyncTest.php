@@ -4,6 +4,7 @@ namespace Tests\Integration;
 
 use Tests\TestCase;
 use Tests\Support\ScriptedGoogleTransport;
+use Tests\Support\ConnectsGoogleAccount;
 use ClarionApp\LifeLogBackend\Google\GoogleHealthService;
 use ClarionApp\LifeLogBackend\Google\Api\ApiVersion;
 use ClarionApp\LifeLogBackend\Models\ServiceCredential;
@@ -20,6 +21,8 @@ use GuzzleHttp\Client;
  */
 class GoogleIncrementalSyncTest extends TestCase
 {
+    use ConnectsGoogleAccount;
+
     protected $user;
     protected $transport;
 
@@ -49,6 +52,8 @@ class GoogleIncrementalSyncTest extends TestCase
         // Setup transport
         $this->transport = ScriptedGoogleTransport::make();
         $this->transport->bind($this->app);
+
+        $this->connectGoogleAccount($this->user->id);
     }
 
     /** @test T054 — US2 scenario 1: single page of heart rate data */
@@ -77,23 +82,6 @@ class GoogleIncrementalSyncTest extends TestCase
             'nextPageToken' => null,
         ]);
 
-        // Create connected account and authorization
-        $connectedAccount = ConnectedAccount::create([
-            'user_id'            => $this->user->id,
-            'external_service'   => GoogleHealthService::NAME,
-            'external_user_id'   => 'test-user-id',
-            'connected_at'       => CarbonImmutable::now(),
-        ]);
-
-        AccountAuthorization::create([
-            'user_id'            => $this->user->id,
-            'external_service'   => GoogleHealthService::NAME,
-            'access_token'       => 'test-access-token',
-            'refresh_token'      => 'test-refresh-token',
-            'expires_at'         => CarbonImmutable::now()->addHour(),
-            'credential_version' => 1,
-        ]);
-
         $registry = app(HealthServiceRegistry::class);
         $service = $registry->resolve(GoogleHealthService::NAME);
 
@@ -108,8 +96,8 @@ class GoogleIncrementalSyncTest extends TestCase
             [MeasurementType::HeartRate],
         );
 
-        $this->assertCount(2, $page->measurements);
-        $this->assertNull($page->nextCursor);
+        $this->assertCount(2, $page->measurements());
+        $this->assertNull($page->nextCursor());
     }
 
     /** @test T054 — US2 scenario 2: multi-page paging */
@@ -152,7 +140,9 @@ class GoogleIncrementalSyncTest extends TestCase
         $since = CarbonImmutable::parse('2025-07-20 00:00:00', 'UTC');
         $until = CarbonImmutable::parse('2025-07-20 01:00:00', 'UTC');
 
-        $page = $service->fetch(
+        // One fetch is one request: the first call returns the first page and
+        // the cursor the caller resumes from, never the whole window.
+        $first = $service->fetch(
             $this->user->id,
             $since,
             $until,
@@ -160,8 +150,20 @@ class GoogleIncrementalSyncTest extends TestCase
             [MeasurementType::Steps],
         );
 
-        $this->assertCount(2, $page->measurements);
-        $this->assertNull($page->nextCursor);
+        $this->assertCount(1, $first->measurements());
+        $this->assertNotNull($first->nextCursor());
+        $this->assertSame(1, $this->transport->requestCount());
+
+        $second = $service->fetch(
+            $this->user->id,
+            $since,
+            $until,
+            $first->nextCursor(),
+            [MeasurementType::Steps],
+        );
+
+        $this->assertCount(1, $second->measurements());
+        $this->assertNull($second->nextCursor());
         $this->assertSame(2, $this->transport->requestCount());
     }
 
@@ -200,7 +202,7 @@ class GoogleIncrementalSyncTest extends TestCase
         );
 
         // Only heart rate measurements should be returned
-        foreach ($page->measurements as $m) {
+        foreach ($page->measurements() as $m) {
             $this->assertSame(MeasurementType::HeartRate, $m->type);
         }
 
@@ -233,8 +235,8 @@ class GoogleIncrementalSyncTest extends TestCase
             [MeasurementType::HeartRate],
         );
 
-        $this->assertCount(0, $page->measurements);
-        $this->assertNull($page->nextCursor);
+        $this->assertCount(0, $page->measurements());
+        $this->assertNull($page->nextCursor());
     }
 
     /** @test T054 — US2 scenario 5: cursor continuation */
@@ -270,8 +272,8 @@ class GoogleIncrementalSyncTest extends TestCase
             [MeasurementType::HeartRate],
         );
 
-        $this->assertCount(1, $page->measurements);
-        $this->assertNotNull($page->nextCursor);
+        $this->assertCount(1, $page->measurements());
+        $this->assertNotNull($page->nextCursor());
     }
 
     /** @test T054 — US2 scenario 6: wide window rejected with InvalidRequest */

@@ -189,7 +189,8 @@ class GoogleSecretExposureTest extends TestCase
             $this->baseUrl() . "/connected-accounts/{$connectedAccount->id}/sync"
         );
 
-        $response->assertStatus(200);
+        // On-demand sync queues the run and answers 202 (056).
+        $response->assertStatus(202);
         $this->assertSentinelsAbsent($response);
     }
 
@@ -272,7 +273,8 @@ class GoogleSecretExposureTest extends TestCase
             $this->baseUrl() . "/connected-accounts/{$connectedAccount->id}/sync"
         );
 
-        $response->assertStatus(200);
+        // On-demand sync queues the run and answers 202 (056).
+        $response->assertStatus(202);
         $this->assertSentinelsAbsent($response);
 
         // Verify the access token was updated but refresh token was not leaked
@@ -356,8 +358,9 @@ class GoogleSecretExposureTest extends TestCase
         $response->assertStatus(200);
         $this->assertSentinelsAbsent($response);
 
-        // Verify the account and authorization are gone
-        $this->assertNull(
+        // The account is bridged, so teardown leaves a tombstone rather than
+        // hard-deleting it — deleted_at is set, not absent.
+        $this->assertNotNull(
             ConnectedAccount::withTrashed()->find($connectedAccount->id)?->deleted_at
         );
         $this->assertDatabaseMissing('life_log_account_authorizations', [

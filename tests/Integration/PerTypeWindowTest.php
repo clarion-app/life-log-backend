@@ -4,6 +4,7 @@ namespace Tests\Integration;
 
 use Tests\TestCase;
 use Tests\Support\ScriptedGoogleTransport;
+use Tests\Support\ConnectsGoogleAccount;
 use ClarionApp\LifeLogBackend\Google\GoogleHealthService;
 use ClarionApp\LifeLogBackend\Models\ServiceCredential;
 use ClarionApp\LifeLogBackend\External\HealthServiceRegistry;
@@ -16,6 +17,8 @@ use Carbon\CarbonImmutable;
  */
 class PerTypeWindowTest extends TestCase
 {
+    use ConnectsGoogleAccount;
+
     protected $user;
     protected $transport;
 
@@ -43,6 +46,8 @@ class PerTypeWindowTest extends TestCase
 
         $this->transport = ScriptedGoogleTransport::make();
         $this->transport->bind($this->app);
+
+        $this->connectGoogleAccount($this->user->id);
     }
 
     /** @test T055 — heart rate max window is 14 days */
@@ -126,7 +131,7 @@ class PerTypeWindowTest extends TestCase
             [MeasurementType::HeartRate],
         );
 
-        $this->assertCount(0, $page->measurements);
+        $this->assertCount(0, $page->measurements());
     }
 
     /** @test T055 — heart rate window of 15 days fails */
@@ -174,6 +179,6 @@ class PerTypeWindowTest extends TestCase
             [MeasurementType::Steps],
         );
 
-        $this->assertCount(0, $page->measurements);
+        $this->assertCount(0, $page->measurements());
     }
 }

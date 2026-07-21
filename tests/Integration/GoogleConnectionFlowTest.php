@@ -126,7 +126,7 @@ class GoogleConnectionFlowTest extends TestCase
         $this->assertNotNull($auth->scopes);
 
         // Attempt was consumed
-        $this->assertDatabaseMissing('connection_attempts', [
+        $this->assertDatabaseMissing('life_log_connection_attempts', [
             'user_id' => $this->user->id,
             'external_service' => GoogleHealthService::NAME,
             'consumed_at' => null,
@@ -257,16 +257,17 @@ class GoogleConnectionFlowTest extends TestCase
         $this->assertFalse($firstData['reconnected']);
         $accountId = $firstData['id'];
 
-        // Second connection (reconnect)
-        $transport2 = ScriptedGoogleTransport::make()
-            ->respondJson(200, [
-                'access_token'  => 'second-access-token',
-                'refresh_token' => 'second-refresh-token',
-                'expires_in'    => 3600,
-                'scope'         => implode(' ', collect(ScopeBundle::all())->map(fn ($b) => $b->scopeString())->all()),
-            ]);
-
-        $transport2->bind($this->app);
+        // Second connection (reconnect). Queued on the same transport rather
+        // than a second one: GoogleOauthFlow is a singleton and already holds
+        // the client from the first bind(), so rebinding would install a
+        // transport nothing asks for and leave this exchange with an empty
+        // queue.
+        $transport->respondJson(200, [
+            'access_token'  => 'second-access-token',
+            'refresh_token' => 'second-refresh-token',
+            'expires_in'    => 3600,
+            'scope'         => implode(' ', collect(ScopeBundle::all())->map(fn ($b) => $b->scopeString())->all()),
+        ]);
 
         $state2 = bin2hex(random_bytes(32));
         ConnectionAttempt::create([
@@ -290,12 +291,10 @@ class GoogleConnectionFlowTest extends TestCase
         $this->assertTrue($secondData['reconnected']);
         $this->assertSame($accountId, $secondData['id']);
 
-        // Still only one ConnectedAccount
-        $this->assertDatabaseCount(
-            'life_log_connected_accounts',
-            1,
-            'Reconnecting should not create a second account.',
-        );
+        // Still only one ConnectedAccount — reconnecting must not create a
+        // second. (assertDatabaseCount's third argument is the connection
+        // name, not a failure message.)
+        $this->assertDatabaseCount('life_log_connected_accounts', 1);
 
         // Authorization was replaced
         $auths = AccountAuthorization::where('connected_account_id', $accountId)->get();
