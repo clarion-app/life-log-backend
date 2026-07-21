@@ -63,7 +63,10 @@ class GoogleConnectionFlowTest extends TestCase
         $parsed = parse_url($result->authorizationUrl);
         parse_str($parsed['query'], $query);
 
-        $requestedScopes = explode('+', $query['scope']);
+        // Space-delimited per RFC 6749 §3.3. parse_str has already decoded the
+        // wire encoding, so splitting on anything but a space would pass while
+        // Google was being sent one malformed scope.
+        $requestedScopes = explode(' ', $query['scope']);
         $expectedScopes = collect(ScopeBundle::all())->map(fn ($b) => $b->scopeString())->sort()->values()->all();
         sort($requestedScopes);
 

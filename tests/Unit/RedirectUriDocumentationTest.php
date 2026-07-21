@@ -81,9 +81,10 @@ class RedirectUriDocumentationTest extends TestCase
 
         $result = $flow->authorizeUrl('user-123', 'https://example.com/callback');
 
-        // Parse the scopes from the URL
+        // Parse the scopes from the URL. RFC 6749 §3.3 makes `scope` a
+        // space-delimited list; parse_str has already decoded the wire encoding.
         parse_str(parse_url($result['url'], PHP_URL_QUERY), $query);
-        $scopes = explode('+', $query['scope']);
+        $scopes = explode(' ', $query['scope']);
 
         // Must have exactly three scope strings
         $this->assertCount(3, $scopes);

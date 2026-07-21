@@ -36,9 +36,14 @@ final class GoogleOauthFlow
     public function authorizeUrl(string $userId, string $redirectUri): array
     {
         $state = bin2hex(random_bytes(32));
+
+        // Space-delimited per RFC 6749 §3.3. http_build_query url-encodes the
+        // separator for us; joining with a literal '+' here would be encoded to
+        // '%2B' and decode back to '+', so Google would receive one unrecognised
+        // scope instead of three and could not offer the bundles independently.
         $scopes = collect(ScopeBundle::all())
             ->map(fn ($b) => $b->scopeString())
-            ->implode('+');
+            ->implode(' ');
 
         $params = http_build_query([
             'client_id'     => $this->credentialProvider->require('google-health')->client_id,
