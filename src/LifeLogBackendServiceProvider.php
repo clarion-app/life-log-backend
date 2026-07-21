@@ -5,6 +5,7 @@ namespace ClarionApp\LifeLogBackend;
 use ClarionApp\Backend\ClarionPackageServiceProvider;
 use ClarionApp\LifeLogBackend\Commands\BackfillAccountCommand;
 use ClarionApp\LifeLogBackend\Commands\BackfillAccountsCommand;
+use ClarionApp\LifeLogBackend\Commands\ProbeNotWornExclusionCommand;
 use ClarionApp\LifeLogBackend\Commands\PruneConnectionAttemptsCommand;
 use ClarionApp\LifeLogBackend\Commands\PruneRawMeasurementsCommand;
 use ClarionApp\LifeLogBackend\Commands\PruneRawSessionsCommand;
@@ -138,6 +139,7 @@ class LifeLogBackendServiceProvider extends ClarionPackageServiceProvider
                 BackfillAccountCommand::class,
                 PruneSyncAttemptsCommand::class,
                 PruneConnectionAttemptsCommand::class,
+                ProbeNotWornExclusionCommand::class,
             ]);
 
             // Schedule hourly rollup, daily pruning, and hourly sync sweep

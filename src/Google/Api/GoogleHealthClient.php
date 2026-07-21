@@ -223,9 +223,8 @@ final class GoogleHealthClient
             }
 
             // null means ACCESS_TOKEN_SCOPE_INSUFFICIENT — skip signal
-            throw HealthServiceFailure::accessRevoked(
-                'Google API returned 403 ACCESS_TOKEN_SCOPE_INSUFFICIENT — scope narrowed.'
-            );
+            // The service layer catches this to skip the type without failing.
+            throw new ScopeInsufficientException($url);
         }
     }
 
@@ -235,15 +234,15 @@ final class GoogleHealthClient
     private function measurementGoogleType(MeasurementType $type): string
     {
         $map = [
-            MeasurementType::Steps          => 'stepCount',
-            MeasurementType::HeartRate      => 'heartRateBpm',
-            MeasurementType::Weight         => 'weight',
-            MeasurementType::CaloriesBurned => 'caloriesBurned',
-            MeasurementType::Distance       => 'distance',
-            MeasurementType::ActiveMinutes  => 'activeMinutes',
+            MeasurementType::Steps->value          => 'stepCount',
+            MeasurementType::HeartRate->value      => 'heartRateBpm',
+            MeasurementType::Weight->value         => 'weight',
+            MeasurementType::CaloriesBurned->value => 'caloriesBurned',
+            MeasurementType::Distance->value       => 'distance',
+            MeasurementType::ActiveMinutes->value  => 'activeMinutes',
         ];
 
-        $googleType = $map[$type] ?? null;
+        $googleType = $map[$type->value] ?? null;
 
         if ($googleType === null) {
             throw new InvalidArgumentException(

@@ -297,3 +297,27 @@ Everything else about a credential's exposure is a solved problem: it never
 appears in an API response, error, or log (`CredentialSecretExposureTest`,
 `LogRedactionTest`). This is the one place the answer is "the operator's
 network is the trust boundary," not "the code stops it."
+
+---
+
+# Google Health API — Version Pin
+
+The Google Health API client pins a specific API version in
+`src/Google/Api/ApiVersion.php`. Every URI the client constructs carries this
+pin, and `ApiVersionPinTest` asserts that the pinned string appears in the
+captured request URI — so a pin change is a deliberate edit with a failing
+test attached.
+
+**Monitoring duty**: Watch the [Google Health API release notes](https://developers.google.com/healthcare-api/releases)
+for version announcements. When the API version changes:
+
+1. Update the `VERSION` constant in `src/Google/Api/ApiVersion.php`.
+2. Re-capture test fixtures under `tests/Support/Fixtures/google/` — each
+   fixture is stamped with the API version and capture date it was produced
+   against, and a pin bump invalidates them.
+3. Run the test suite. `ApiVersionPinTest` will fail until the new version
+   appears in the client's constructed URIs.
+
+This is an operational instruction, not an automated process. A self-hosted
+node has nothing to poll release notes with — it is a manual check before
+deploying after a known Google API update.

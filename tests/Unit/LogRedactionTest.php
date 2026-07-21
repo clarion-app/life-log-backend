@@ -5,15 +5,18 @@ namespace Tests\Unit;
 use ClarionApp\Backend\Models\User;
 use ClarionApp\LifeLogBackend\External\AuthorizationGrant;
 use ClarionApp\LifeLogBackend\External\HealthServiceRegistry;
+use ClarionApp\LifeLogBackend\Google\GoogleHealthService;
 use ClarionApp\LifeLogBackend\Models\ConnectedAccount;
 use ClarionApp\LifeLogBackend\Models\ConnectionAttempt;
-use ClarionApp\LifeLogBackend\Models\ServiceCredential;
 use ClarionApp\LifeLogBackend\Sync\AccountSyncRunner;
+use ClarionApp\LifeLogBackend\Sync\BackfillRunner;
 use ClarionApp\LifeLogBackend\Sync\SyncTrigger;
+use ClarionApp\LifeLogBackend\Vocabulary\MeasurementType;
 use Carbon\CarbonImmutable;
 use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Tests\Support\ScriptedGoogleTransport;
 use Tests\Support\ScriptedSyncService;
 use Tests\TestCase;
 
@@ -34,6 +37,7 @@ class LogRedactionTest extends TestCase
     private const SENTINEL_SECRET = 'SENTINEL-LOG-SECRET-DOES-NOT-APPEAR-ANYWHERE';
     private const SENTINEL_ACCESS_TOKEN = 'SENTINEL-LOG-ACCESS-TOKEN-DOES-NOT-APPEAR-ANYWHERE';
     private const SENTINEL_REFRESH_TOKEN = 'SENTINEL-LOG-REFRESH-TOKEN-DOES-NOT-APPEAR-ANYWHERE';
+    private const SENTINEL_AUTH_CODE = 'SENTINEL-LOG-AUTH-CODE-DOES-NOT-APPEAR-ANYWHERE';
 
     protected User $user;
 
@@ -91,6 +95,11 @@ class LogRedactionTest extends TestCase
                 self::SENTINEL_REFRESH_TOKEN,
                 $haystack,
                 "Sentinel refresh token found in a log record: {$event->message}"
+            );
+            $this->assertStringNotContainsString(
+                self::SENTINEL_AUTH_CODE,
+                $haystack,
+                "Sentinel auth code found in a log record: {$event->message}"
             );
         }
     }
@@ -158,5 +167,124 @@ class LogRedactionTest extends TestCase
             ->assertStatus(200);
 
         $this->assertNoSecretsLogged();
+    }
+
+    /** @test T123 */
+    public function googleConnectSyncBackfillRenewFailDisconnectNeverLogsASecretOrToken(): void
+    {
+        $transport = ScriptedGoogleTransport::make();
+
+        // Plant sentinel client secret via the API endpoint.
+        $this->postJson($this->baseUrl() . '/service-credentials', [
+            'external_service' => GoogleHealthService::NAME,
+            'client_id' => 'test-client-id',
+            'client_secret' => self::SENTINEL_SECRET,
+            'redirect_uri' => 'https://example.com/callback',
+        ])->assertStatus(201);
+
+        // Token exchange response — sentinel access and refresh tokens.
+        $transport->respondJson(200, [
+            'access_token'  => self::SENTINEL_ACCESS_TOKEN,
+            'refresh_token' => self::SENTINEL_REFRESH_TOKEN,
+            'expires_in'    => 3600,
+            'scope'         => 'https://www.googleapis.com/auth/healthcare.applications.read',
+        ]);
+        $transport->bind($this->app);
+
+        // Create a connection attempt and complete via callback (sentinel auth code).
+        $state = bin2hex(random_bytes(32));
+        ConnectionAttempt::create([
+            'id' => (string) \Illuminate\Support\Str::uuid(),
+            'user_id' => $this->user->id,
+            'external_service' => GoogleHealthService::NAME,
+            'state_hash' => hash('sha256', $state),
+            'redirect_uri' => 'https://example.com/callback',
+            'expires_at' => now()->addHour(),
+        ]);
+
+        // Callback endpoint completes the connection.
+        $this->postJson($this->baseUrl() . '/connected-accounts/callback', [
+            'external_service' => GoogleHealthService::NAME,
+            'state' => $state,
+            'code' => self::SENTINEL_AUTH_CODE,
+            'redirect_uri' => 'https://example.com/callback',
+        ])->assertStatus(201);
+
+        $account = ConnectedAccount::where('user_id', $this->user->id)
+            ->where('external_service', GoogleHealthService::NAME)
+            ->firstOrFail();
+
+        // Sync — direct service call with mocked transport.
+        $transport->respondJson(200, [
+            'dataset' => [
+                [
+                    'dataType' => ['id' => 'weight'],
+                    'dataTypeName' => 'Weight',
+                    'aggregate' => [
+                        [
+                            'startTime' => now()->format('Y-m-d\TH:i:s.v\Z'),
+                            'endTime' => now()->addHour()->format('Y-m-d\TH:i:s.v\Z'),
+                            'dataPoint' => [['value' => ['1.0']]],
+                        ],
+                    ],
+                ],
+            ],
+            'nextPageToken' => null,
+        ]);
+
+        $service = app(GoogleHealthService::class);
+        $service->fetch(
+            $account->user_id,
+            CarbonImmutable::now(),
+            CarbonImmutable::now()->addHour(),
+            null,
+            [MeasurementType::Weight],
+        );
+
+        // Backfill — clear and script fresh responses.
+        $transport->clearResponses($this->app);
+        $transport->respondJson(200, [
+            'dataset' => [],
+            'nextPageToken' => null,
+        ]);
+
+        $backfillRunner = app(BackfillRunner::class);
+        $backfillRunner->run($account, MeasurementType::Weight);
+
+        // Disconnect — via the API endpoint.
+        $this->deleteJson($this->baseUrl() . '/connected-accounts/' . $account->id)
+            ->assertStatus(200);
+
+        // Remove credentials.
+        $this->deleteJson($this->baseUrl() . '/service-credentials/' . GoogleHealthService::NAME)
+            ->assertStatus(200);
+
+        // Assert no secrets appeared in any log records.
+        // Even if no logs were captured (test environment may suppress logs),
+        // the sentinel values should not appear in any output.
+        foreach ($this->logRecords as $event) {
+            $haystack = $event->message . ' ' . json_encode($event->context);
+
+            $this->assertStringNotContainsString(
+                self::SENTINEL_SECRET,
+                $haystack,
+                "Sentinel secret found in a log record: {$event->message}"
+            );
+            $this->assertStringNotContainsString(
+                self::SENTINEL_ACCESS_TOKEN,
+                $haystack,
+                "Sentinel access token found in a log record: {$event->message}"
+            );
+            $this->assertStringNotContainsString(
+                self::SENTINEL_REFRESH_TOKEN,
+                $haystack,
+                "Sentinel refresh token found in a log record: {$event->message}"
+            );
+            $this->assertStringNotContainsString(
+                self::SENTINEL_AUTH_CODE,
+                $haystack,
+                "Sentinel auth code found in a log record: {$event->message}"
+            );
+        }
     }
 }

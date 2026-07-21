@@ -2,6 +2,7 @@
 
 namespace ClarionApp\LifeLogBackend\Google;
 
+use ClarionApp\LifeLogBackend\Contracts\FailureKind;
 use ClarionApp\LifeLogBackend\Contracts\ExternalHealthService;
 use ClarionApp\LifeLogBackend\Exceptions\HealthServiceFailure;
 use ClarionApp\LifeLogBackend\External\AuthorizationGrant;
@@ -12,6 +13,7 @@ use ClarionApp\LifeLogBackend\External\RenewalResult;
 use ClarionApp\LifeLogBackend\External\ResultPage;
 use ClarionApp\LifeLogBackend\Google\Api\ApiVersion;
 use ClarionApp\LifeLogBackend\Google\Api\GoogleHealthClient;
+use ClarionApp\LifeLogBackend\Google\Api\ScopeInsufficientException;
 use ClarionApp\LifeLogBackend\Google\Mapping\AggregateSource;
 use ClarionApp\LifeLogBackend\Google\Mapping\MeasurementTranslator;
 use ClarionApp\LifeLogBackend\Google\Mapping\SessionTranslator;
@@ -158,13 +160,20 @@ final class GoogleHealthService implements ExternalHealthService
             }
 
             while ($done === false) {
-                $result = $client->fetchMeasurements(
-                    $userId,
-                    $type,
-                    $since,
-                    $until,
-                    $pageToken,
-                );
+                try {
+                    $result = $client->fetchMeasurements(
+                        $userId,
+                        $type,
+                        $since,
+                        $until,
+                        $pageToken,
+                    );
+                } catch (ScopeInsufficientException) {
+                    // This measurement type is not covered by the current
+                    // OAuth scope grant. Skip it — the sync stays healthy.
+                    $done = true;
+                    continue;
+                }
 
                 $translated = $translator->translate(
                     $result['dataPoints'],
@@ -193,13 +202,20 @@ final class GoogleHealthService implements ExternalHealthService
             }
 
             while ($done === false) {
-                $result = $client->fetchSessions(
-                    $userId,
-                    $type,
-                    $since,
-                    $until,
-                    $pageToken,
-                );
+                try {
+                    $result = $client->fetchSessions(
+                        $userId,
+                        $type,
+                        $since,
+                        $until,
+                        $pageToken,
+                    );
+                } catch (ScopeInsufficientException) {
+                    // This session type is not covered by the current
+                    // OAuth scope grant. Skip it — the sync stays healthy.
+                    $done = true;
+                    continue;
+                }
 
                 $translated = $sessionTranslator->translate(
                     $result['sessions'],
@@ -244,18 +260,34 @@ final class GoogleHealthService implements ExternalHealthService
 
     public function renewAccess(string $userId): RenewalResult
     {
-        $tokens = $this->oauthFlow->refreshToken($userId);
+        try {
+            $tokens = $this->oauthFlow->refreshToken($userId);
 
-        $expiresAt = null;
-        if (isset($tokens['expires_in'])) {
-            $expiresAt = CarbonImmutable::now()->addSeconds($tokens['expires_in']);
+            $expiresAt = null;
+            if (isset($tokens['expires_in'])) {
+                $expiresAt = CarbonImmutable::now()->addSeconds($tokens['expires_in']);
+            }
+
+            return RenewalResult::renewed($expiresAt);
+        } catch (HealthServiceFailure $e) {
+            // invalid_grant from the token endpoint means the grant can no
+            // longer be renewed (user revoked, testing expiry, project
+            // deleted). Return a declined RenewalResult — the runner then
+            // routes to AccessRevoked ⇒ needs_attention.
+            if ($e->kind === FailureKind::AccessRevoked) {
+                return RenewalResult::declined();
+            }
+
+            // CredentialsRejected or ServiceUnavailable during refresh —
+            // also decline; retrying the same token won't help.
+            if ($e->kind === FailureKind::CredentialsRejected ||
+                $e->kind === FailureKind::ServiceUnavailable) {
+                return RenewalResult::declined();
+            }
+
+            // For any other failure kind, re-throw — it is a programming error.
+            throw $e;
         }
-
-        return new RenewalResult(
-            accessToken: $tokens['access_token'],
-            refreshToken: $tokens['refresh_token'] ?? null,
-            expiresAt: $expiresAt,
-        );
     }
 
     public function disconnect(string $userId): DisconnectResult

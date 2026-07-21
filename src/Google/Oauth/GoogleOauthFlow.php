@@ -145,9 +145,34 @@ final class GoogleOauthFlow
     }
 
     /**
-     * Revoke a token (best-effort).
+     * Get the current access token for a user from the stored authorization.
+     *
+     * Reads the authorization row on every call — never caches.
+     *
+     * @throws ServiceNotConfiguredException if no authorization exists
      */
-    public function revokeToken(string $token): bool
+    public function getAccessToken(string $userId): string
+    {
+        $authorization = \ClarionApp\LifeLogBackend\Models\AccountAuthorization::where(
+            'connected_account_id',
+            $this->findAccountId($userId),
+        )->first();
+
+        if ($authorization === null || $authorization->access_token === null) {
+            throw new ServiceNotConfiguredException(
+                "No access token found for user {$userId}."
+            );
+        }
+
+        return $authorization->access_token;
+    }
+
+    /**
+     * Revoke a token (best-effort).
+     *
+     * @return bool true if the remote call succeeded
+     */
+    public function revoke(string $token): bool
     {
         try {
             $this->http->post(ApiVersion::OAUTH_REVOKE, [
@@ -157,6 +182,26 @@ final class GoogleOauthFlow
         } catch (GuzzleException) {
             return false;
         }
+    }
+
+    /**
+     * Find the connected account id for a user by their user_id.
+     *
+     * @throws ServiceNotConfiguredException if no account exists
+     */
+    private function findAccountId(string $userId): string
+    {
+        $account = \ClarionApp\LifeLogBackend\Models\ConnectedAccount::where('user_id', $userId)
+            ->where('external_service', 'google-health')
+            ->first();
+
+        if ($account === null) {
+            throw new ServiceNotConfiguredException(
+                "No connected Google account found for user {$userId}."
+            );
+        }
+
+        return $account->id;
     }
 
     /**

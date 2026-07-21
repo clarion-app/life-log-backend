@@ -119,6 +119,22 @@ class ScriptedGoogleTransport
     }
 
     /**
+     * Clear all scripted responses and start fresh.
+     * Re-binds the new handler stack into the container.
+     */
+    public function clearResponses(Container $app): void
+    {
+        $this->history = [];
+        $this->mock = new MockHandler();
+        $this->stack = HandlerStack::create($this->mock);
+        $this->stack->push(Middleware::history($this->history), 'history');
+
+        $client = new Client(['handler' => $this->stack]);
+        $app->instance(Client::class, $client);
+        $app->instance('guzzle', $client);
+    }
+
+    /**
      * Return the underlying HandlerStack (for advanced test scenarios).
      */
     public function handlerStack(): HandlerStack

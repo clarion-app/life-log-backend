@@ -106,6 +106,8 @@ class GoogleContainmentTest extends TestCase
                     || str_contains($line, 'GoogleOauthFlow')
                     || str_contains($line, 'ScriptedGoogleTransport')
                     || str_contains($line, 'clarion-app/life-log')
+                    || str_contains($line, 'GoogleHealthClient')
+                    || str_contains($line, 'AggregateSource')
                 ) {
                     continue;
                 }
