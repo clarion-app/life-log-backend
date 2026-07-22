@@ -451,4 +451,73 @@ class ConnectedAccountGrantsTest extends BaseTestCase
         $body = (array) json_decode($response->getContent(), true);
         $this->assertSame('not_found', $body['error']);
     }
+
+    /**
+     * The broadcast payload and the fetched entry are the same projection.
+     *
+     * Same keys in the same order, same values — not merely "both have the
+     * expected keys". Two hand-maintained copies of the projection would
+     * satisfy a key-presence check and still disagree on the wire.
+     */
+    #[\PHPUnit\Framework\Attributes\Test]
+    public function broadcastPayloadEqualsIndexEntry(): void
+    {
+        $this->registerFakeService('fake-google', [
+            MeasurementType::Steps, MeasurementType::HeartRate,
+            MeasurementType::CaloriesBurned, SessionType::Workout,
+            MeasurementType::Weight, SessionType::Sleep,
+        ]);
+
+        $userId = (string) Str::uuid();
+        $this->makeUser($userId);
+        $account = $this->makeAccount(
+            $userId,
+            'fake-google',
+            ScopeBundle::ActivityAndFitness->value,
+        );
+
+        $body = $this->indexAs($userId);
+        $fetched = $body['connections'][0];
+
+        $broadcast = (new \ClarionApp\LifeLogBackend\Events\ConnectedAccountStatusChanged(
+            $account->fresh()
+        ))->broadcastWith();
+
+        // json-encode the broadcast so both sides have been through the same
+        // serialisation the interface actually receives.
+        $this->assertSame(
+            $fetched,
+            json_decode(json_encode($broadcast), true),
+        );
+    }
+
+    /**
+     * The same holds for a connection needing attention.
+     */
+    #[\PHPUnit\Framework\Attributes\Test]
+    public function broadcastPayloadEqualsIndexEntryWhenNeedingAttention(): void
+    {
+        $this->registerFakeService('fake-google', [
+            MeasurementType::Steps, SessionType::Sleep,
+        ]);
+
+        $userId = (string) Str::uuid();
+        $this->makeUser($userId);
+        $account = $this->makeAccount($userId, 'fake-google', null);
+        $account->sync_state = 'needs_attention';
+        $account->save();
+
+        $body = $this->indexAs($userId);
+        $fetched = $body['connections'][0];
+        $this->assertSame('needs_attention', $fetched['status']);
+
+        $broadcast = (new \ClarionApp\LifeLogBackend\Events\ConnectedAccountStatusChanged(
+            $account->fresh()
+        ))->broadcastWith();
+
+        $this->assertSame(
+            $fetched,
+            json_decode(json_encode($broadcast), true),
+        );
+    }
 }

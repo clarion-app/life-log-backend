@@ -104,14 +104,53 @@ right architecture.
    > Wearable Services area — the mismatch warning will surface if the stored
    > `redirect_uri` differs from the derived frontend callback path.
 
-   > **Important**: Use `https://` — Google requires HTTPS for production
-   > redirect URIs. For local development you may use `http://localhost` but
-   > only in Testing mode.
+   > **Important**: Use `https://` — Google requires HTTPS for every redirect
+   > URI except the loopback host, where `http://localhost:PORT/...` is
+   > accepted. That exception is about the host, not about publishing status:
+   > it works in Testing and in production alike.
+
+   > **Google will not accept an IP address.** See
+   > [Reaching a node that has no public hostname](#reaching-a-node-that-has-no-public-hostname)
+   > below if your instance is served from a LAN address such as
+   > `https://192.168.1.50:9000`.
 
 6. Click **Create**.
 7. A dialog shows your **Client ID** and **Client Secret**. Copy both — you
    need them in the next step. Close the dialog afterwards (you can always
    re-open Client ID; Client Secret can be regenerated if lost).
+
+### Reaching a node that has no public hostname
+
+Google validates the redirect URI **as a string**, before anything is ever
+requested. It rejects:
+
+- any bare IP address, private or public — `https://192.168.199.134:9000/...`
+  fails with *"must end with a public top-level domain"* and *"must use a
+  domain that is a valid top private domain"*
+- mDNS names such as `https://nodename.local/...`
+- any hostname without a public TLD
+
+There is no console setting that relaxes this. A self-hosted node on a LAN
+address therefore needs a hostname, and one of these four options:
+
+| Option | Register with Google | Notes |
+|---|---|---|
+| **Loopback** | `http://localhost:9000/clarion-app/life-log/connected-services/callback/google-health` | Simplest, but only usable from a browser **on the node itself** — see the invariant below. |
+| **Wildcard DNS** (`sslip.io`, `nip.io`) | `https://192-168-199-134.sslip.io:9000/...` | Public TLD, so Google accepts it; resolves to the LAN IP, so the browser reaches your node. No DNS to run. A self-signed certificate still produces a browser warning — Google never fetches the URL, so it does not care. |
+| **A domain you control** | `https://lifelog.example.com/...` | Point an A record — or your LAN's DNS, or a `hosts` entry — at the node. Google validates the string, not reachability. |
+| **A tunnel** (Cloudflare Tunnel, ngrok) | the tunnel's public HTTPS hostname | Gives you a real certificate too. Adds a dependency outside your network. |
+
+**The invariant that makes any of them work**: the interface derives the
+registration address from `window.location.origin`, so you must browse to the
+node at **exactly** the origin you registered — same scheme, same host, same
+port. Registering `https://192-168-199-134.sslip.io:9000` and then opening the
+app at `https://192.168.199.134:9000` produces a redirect-URI mismatch, because
+the address the connection returns to is built from the address you arrived on.
+
+The **Wearable Services** area surfaces this: if the stored `redirect_uri`
+differs from the address it derives for the origin you are currently on, it
+shows a mismatch warning and offers to save the current value. Treat that
+warning as the authoritative signal that the two have diverged.
 
 ## 5. Enter Credentials in Life Log
 
@@ -171,7 +210,9 @@ can authorize the app. The test user list only matters in Testing mode.
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | "This app isn't verified" and user cannot proceed | Publishing status is still "Testing" | Set to "In production" (Step 3) |
+| Console refuses the URI: "must end with a public top-level domain" / "must use a domain that is a valid top private domain" | The redirect URI is a bare IP address, a `.local` name, or a host with no public TLD | Give the node a hostname — see [Reaching a node that has no public hostname](#reaching-a-node-that-has-no-public-hostname) |
 | "Redirect URI mismatch" error from Google | `redirect_uri` in credentials differs from Google Console | Ensure both are byte-identical |
+| Mismatch persists after registering a hostname | You registered one origin but browse the app at another | The callback is derived from `window.location.origin`; open the app at the exact origin you registered |
 | Refresh token stops working after 7 days | App is still in Testing mode | Publish to production (Step 3) |
 | "User count exceeded" error | 100 users authorized on unverified project | You have hit the FR-020b cap; see above |
 | Connection fails with "credentials rejected" | Client ID or secret is wrong, or the project was deleted | Re-enter credentials at `/service-credentials` |

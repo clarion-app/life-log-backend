@@ -6,7 +6,7 @@ use ClarionApp\LifeLogBackend\Connection\AccountDisconnector;
 use ClarionApp\LifeLogBackend\Connection\ConnectionAttemptFactory;
 use ClarionApp\LifeLogBackend\Connection\ConnectionAttemptVerifier;
 use ClarionApp\LifeLogBackend\Connection\ConnectionCompleter;
-use ClarionApp\LifeLogBackend\Connection\GrantedScopeResolver;
+use ClarionApp\LifeLogBackend\Connection\ConnectionProjector;
 use ClarionApp\LifeLogBackend\Credentials\ServiceCredentialProvider;
 use ClarionApp\LifeLogBackend\Exceptions\HealthServiceFailure;
 use ClarionApp\LifeLogBackend\Exceptions\ServiceNotConfiguredException;
@@ -29,7 +29,7 @@ class ConnectedAccountController extends Controller
         private ServiceCredentialProvider $credentialProvider,
         private HealthServiceRegistry $serviceRegistry,
         private AccountDisconnector $disconnector,
-        private GrantedScopeResolver $grantedScopeResolver,
+        private ConnectionProjector $projector,
     ) {
     }
 
@@ -60,33 +60,6 @@ class ConnectedAccountController extends Controller
     }
 
     /**
-     * Shared projection for a connected account.
-     *
-     * Used by both index() and show() to ensure the response shape is
-     * identical. Includes grant information derived from the authorization
-     * scopes and the service's type catalogue.
-     */
-    private function project(ConnectedAccount $account): array
-    {
-        $state = $account->syncState;
-        $grants = $this->grantedScopeResolver->resolve($account);
-
-        return [
-            'id' => $account->id,
-            'external_service' => $account->external_service,
-            'status' => $account->sync_state === 'needs_attention'
-                ? 'needs_attention'
-                : 'healthy',
-            'last_successful_sync_at' => $state?->last_success_at,
-            'connected_at' => $account->connected_at,
-            'needs_attention_reason' => $account->needsAttentionReason(),
-            'granted_scopes' => $grants['granted_scopes'],
-            'granted_types' => $grants['granted_types'],
-            'missing_types' => $grants['missing_types'],
-        ];
-    }
-
-    /**
      * List the authenticated user's connections.
      *
      * Each entry says what the service is, whether it is working, and when
@@ -107,7 +80,7 @@ class ConnectedAccountController extends Controller
             ->get();
 
         $connections = $accounts->map(function (ConnectedAccount $account): array {
-            return $this->project($account);
+            return $this->projector->project($account);
         })->all();
 
         return response()->json(['connections' => $connections]);
@@ -170,7 +143,7 @@ class ConnectedAccountController extends Controller
             return $this->notFound();
         }
 
-        return response()->json($this->project($account));
+        return response()->json($this->projector->project($account));
     }
 
     /**

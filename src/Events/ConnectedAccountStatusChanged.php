@@ -2,7 +2,7 @@
 
 namespace ClarionApp\LifeLogBackend\Events;
 
-use ClarionApp\LifeLogBackend\Connection\GrantedScopeResolver;
+use ClarionApp\LifeLogBackend\Connection\ConnectionProjector;
 use ClarionApp\LifeLogBackend\Models\ConnectedAccount;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
@@ -25,7 +25,7 @@ class ConnectedAccountStatusChanged implements ShouldBroadcastNow
 
     public function __construct(
         private ConnectedAccount $account,
-        private ?GrantedScopeResolver $grantedScopeResolver = null,
+        private ?ConnectionProjector $projector = null,
     ) {
     }
 
@@ -57,35 +57,10 @@ class ConnectedAccountStatusChanged implements ShouldBroadcastNow
      */
     public function broadcastWith(): array
     {
-        $resolver = $this->grantedScopeResolver
-            ?? app(GrantedScopeResolver::class);
+        // The same ConnectionProjector the controller uses — one projection,
+        // so a pushed connection cannot disagree with a fetched one.
+        $projector = $this->projector ?? app(ConnectionProjector::class);
 
-        return $this->project($this->account, $resolver);
-    }
-
-    /**
-     * Shared projection — identical to ConnectedAccountController::project().
-     *
-     * @param  GrantedScopeResolver  $resolver
-     * @return array<string, mixed>
-     */
-    private function project(ConnectedAccount $account, GrantedScopeResolver $resolver): array
-    {
-        $state = $account->syncState;
-        $grants = $resolver->resolve($account);
-
-        return [
-            'id' => $account->id,
-            'external_service' => $account->external_service,
-            'status' => $account->sync_state === 'needs_attention'
-                ? 'needs_attention'
-                : 'healthy',
-            'last_successful_sync_at' => $state?->last_success_at,
-            'connected_at' => $account->connected_at,
-            'needs_attention_reason' => $account->needsAttentionReason(),
-            'granted_scopes' => $grants['granted_scopes'],
-            'granted_types' => $grants['granted_types'],
-            'missing_types' => $grants['missing_types'],
-        ];
+        return $projector->project($this->account);
     }
 }
